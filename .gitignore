@@ -248,3 +248,4 @@ dist-ssr
 
 
 .env
+ingest/cache/
