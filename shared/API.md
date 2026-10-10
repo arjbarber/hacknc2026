@@ -35,7 +35,14 @@ body: {"symbol":"SOL","model_type":"lightgbm",
 -> {"model_id":"m_42","metrics":{"accuracy":0.53,"precision":0.54},
     "backtest":{"equity_curve":[{"ts":1760000000000,"equity":100000}],"sharpe":0.4,"max_drawdown":0.08},
     "train_seconds":3.1}
-model_type: ridge | random_forest | lightgbm
+model_type: logreg | random_forest | lightgbm   ("ridge" still works as an old alias for logreg)
+hyperparams by model_type (all optional; defaults shown):
+  logreg:         C=1.0   (inverse regularization strength: smaller = simpler model)
+  random_forest:  n_estimators=200, max_depth=4
+  lightgbm:       n_estimators=200, max_depth=4, learning_rate=0.05
+  every model:    lookback=30, horizon=5, train_split=0.8, threshold=0.55, fee_bps=10
+lookback and horizon are counted in candles, not hours. Stocks and forex skip nights and
+weekends, so a 5-candle horizon can span a weekend. Label the UI sliders "candles".
 
 GET /models/{model_id}/predict
 -> {"model_id":"m_42","symbol":"SOL","direction":"up","confidence":0.61,

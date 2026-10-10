@@ -1,0 +1,38 @@
+# Run everything:  docker compose up --build
+#   8000 FastAPI backend   3000 frontend   3001 aqua-exe
+#
+# The root Dockerfile is used as-is: it installs backend/requirements.txt only.
+# The `app` image adds the ML layer on top (ml/requirements.txt + libgomp1, which
+# LightGBM needs on Linux), so each team keeps its own requirements file.
+
+services:
+  # The team Dockerfile, built unchanged. Only here to be the base of `app`;
+  # scale 0 means it's built but never started on its own.
+  base:
+    image: papertrade-base
+    build:
+      context: .
+      dockerfile: Dockerfile
+    scale: 0
+
+  app:
+    image: papertrade-app
+    build:
+      context: .
+      additional_contexts:
+        base: service:base
+      dockerfile_inline: |
+        FROM base
+        RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+            && rm -rf /var/lib/apt/lists/*
+        COPY ml/requirements.txt /app/ml/requirements.txt
+        RUN pip install --no-cache-dir -r /app/ml/requirements.txt
+        COPY ml/ /app/ml/
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "8000:8000"
+      - "3000:3000"
+      - "3001:3001"
+    restart: unless-stopped
