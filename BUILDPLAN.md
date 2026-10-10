@@ -7,7 +7,7 @@
 ## Architecture
 
 ```
-Market feeds (Binance/Pyth for SOL, Finnhub/Twelve Data for FX + stocks, Finnhub/CryptoPanic news)
+Market feeds (Binance/Pyth for SOL, Finnhub/Twelve Data for FX + stocks, Finnhub news)
         │
    Ingest worker (Python) ──► Tiger Data (TimescaleDB): ticks, candles, orders, positions, leaderboard
         │                              │
@@ -116,7 +116,7 @@ Check each sponsor's prize rubric and docs at their tables early. I'm working fr
 ### Hours 10–15: Sponsor integrations (parallel)
 
 **Person 4: News and Gemini**
-- Pull headlines (Finnhub news, CryptoPanic) every few minutes and send them to Gemini with a prompt that returns JSON: `{ticker, sentiment: -1..1, one_line_summary}`.
+- Pull headlines (Finnhub news) every few minutes and send them to Gemini with a prompt that returns JSON: `{ticker, sentiment: -1..1, one_line_summary}`.
 - Store the results in Tiger Data and display a live ticker/news panel.
 - Feed average sentiment into the models as an extra feature. This "news-aware model" is a good demo moment.
 
