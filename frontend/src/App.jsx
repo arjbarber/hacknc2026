@@ -1,185 +1,397 @@
-import { useEffect, useState } from 'react'
-import './App.css'
+import { api } from './lib/api.js'
+import { useEffect, useMemo, useState } from 'react'
+import './Aerorithmetic.css'
 
 const assets = [
-  { symbol: 'NVDA', name: 'NVIDIA Corporation', price: 142.87, change: 2.84, color: '#87a98c', path: 'M0 76 C18 70 24 75 38 58 S61 68 77 47 S95 54 112 39 S132 43 148 27 S168 37 184 18 S203 25 220 8' },
-  { symbol: 'AAPL', name: 'Apple Inc.', price: 237.49, change: 0.92, color: '#c89555', path: 'M0 66 C17 58 23 67 39 51 S61 57 79 43 S99 52 116 34 S138 45 154 30 S173 34 190 16 S208 23 220 12' },
-  { symbol: 'MSFT', name: 'Microsoft Corporation', price: 513.12, change: -0.38, color: '#68829b', path: 'M0 24 C17 31 24 17 41 37 S61 29 78 44 S98 34 116 54 S136 39 153 58 S173 48 191 68 S207 57 220 75' },
-  { symbol: 'TSLA', name: 'Tesla, Inc.', price: 332.05, change: -1.64, color: '#bb6f5a', path: 'M0 19 C17 30 23 24 39 40 S59 32 77 52 S98 39 115 60 S136 51 153 67 S174 57 191 78 S207 69 220 84' },
-  { symbol: 'AMZN', name: 'Amazon.com, Inc.', price: 224.19, change: 1.27, color: '#9c8c60', path: 'M0 71 C17 68 24 59 40 66 S60 51 77 56 S99 40 116 48 S136 35 153 38 S173 24 190 29 S207 15 220 11' },
+  { symbol: 'SOL', name: 'Solana', type: 'crypto' },
+  { symbol: 'BTC', name: 'Bitcoin', type: 'crypto' },
+  { symbol: 'ETH', name: 'Ethereum', type: 'crypto' },
+  { symbol: 'BONK', name: 'Bonk', type: 'crypto' },
+  { symbol: 'WIF', name: 'dogwifhat', type: 'crypto' },
+  { symbol: 'AAPL', name: 'Apple', type: 'stock' },
+  { symbol: 'MSFT', name: 'Microsoft', type: 'stock' },
+  { symbol: 'NVDA', name: 'Nvidia', type: 'stock' },
+  { symbol: 'AMZN', name: 'Amazon', type: 'stock' },
+  { symbol: 'GOOGL', name: 'Alphabet', type: 'stock' },
+  { symbol: 'META', name: 'Meta', type: 'stock' },
+  { symbol: 'TSLA', name: 'Tesla', type: 'stock' },
+  { symbol: 'JPM', name: 'JPMorgan Chase', type: 'stock' },
+  { symbol: 'WMT', name: 'Walmart', type: 'stock' },
+  { symbol: 'XOM', name: 'ExxonMobil', type: 'stock' },
+  { symbol: 'UNH', name: 'UnitedHealth', type: 'stock' },
+  { symbol: 'JNJ', name: 'Johnson & Johnson', type: 'stock' },
+  { symbol: 'HD', name: 'Home Depot', type: 'stock' },
+  { symbol: 'KO', name: 'Coca-Cola', type: 'stock' },
+  { symbol: 'BAC', name: 'Bank of America', type: 'stock' },
+  { symbol: 'COST', name: 'Costco', type: 'stock' },
+  { symbol: 'DIS', name: 'Disney', type: 'stock' },
+  { symbol: 'PFE', name: 'Pfizer', type: 'stock' },
+  { symbol: 'EURUSD', name: 'Euro / US Dollar', type: 'forex' },
+  { symbol: 'GBPUSD', name: 'Pound / US Dollar', type: 'forex' },
+  { symbol: 'USDJPY', name: 'US Dollar / Yen', type: 'forex' },
+  { symbol: 'AUDUSD', name: 'Aussie / US Dollar', type: 'forex' },
 ]
 
-const startingPortfolio = {
-  cash: 91129.15,
-  positions: {
-    AAPL: { quantity: 15, averagePrice: 218.4 },
-    NVDA: { quantity: 10, averagePrice: 137.82 },
-    MSFT: { quantity: 8, averagePrice: 492.55 },
-  },
-  history: [
-    { id: 1, side: 'BUY', symbol: 'AAPL', quantity: 15, price: 218.4, time: '09:42:18' },
-    { id: 2, side: 'BUY', symbol: 'NVDA', quantity: 10, price: 137.82, time: '09:38:04' },
-    { id: 3, side: 'BUY', symbol: 'MSFT', quantity: 8, price: 492.55, time: '09:31:52' },
-  ],
+const navItems = [
+  { id: 'trade', label: 'Trade', icon: '⌁' },
+  { id: 'arena', label: 'The Arena', icon: '♧' },
+  { id: 'lab', label: 'Model Lab', icon: '⚙' },
+  { id: 'signals', label: 'Market Signals', icon: '⌖' },
+  { id: 'portfolio', label: 'Portfolio', icon: '▤' },
+]
+const modelOptions = [
+  { id: 'ridge', label: 'Ridge Regression' },
+  { id: 'random_forest', label: 'Random Forest' },
+  { id: 'lightgbm', label: 'LightGBM' },
+]
+const userId = (() => {
+  try {
+    const stored = localStorage.getItem('aerorithmetic-user-id')
+    if (stored) return stored
+    const created = `u_${globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2)}`}`
+    localStorage.setItem('aerorithmetic-user-id', created)
+    return created
+  } catch {
+    return `u_${Date.now()}_${Math.random().toString(36).slice(2)}`
+  }
+})()
+const money = (value, digits = 2) => Number.isFinite(Number(value))
+  ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value)
+  : '—'
+const percent = (value, multiply = false) => Number.isFinite(Number(value)) ? `${(multiply ? value * 100 : value).toFixed(2)}%` : '—'
+const formatTime = (timestamp) => new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date(timestamp))
+const loadReceipts = () => {
+  try {
+    return JSON.parse(localStorage.getItem('aerorithmetic-order-receipts')) || []
+  } catch {
+    return []
+  }
 }
 
-const money = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value)
-const loadPortfolio = () => {
-  try {
-    return JSON.parse(localStorage.getItem('paperdesk-portfolio')) || startingPortfolio
-  } catch {
-    return startingPortfolio
-  }
+function StatusMessage({ loading, error, empty, children }) {
+  if (loading) return <div className="state-message"><span className="loader" /> Loading backend data…</div>
+  if (error) return <div className="state-message state-error"><span className="state-icon">!</span><span>{error}</span></div>
+  if (empty) return <div className="state-message">{empty}</div>
+  return children || null
+}
+
+function PriceChart({ candles, forecast, showForecast, digits }) {
+  const chart = useMemo(() => {
+    if (!candles.length) return null
+    const closes = candles.map((candle) => Number(candle.c))
+    const last = closes.at(-1)
+    const direction = forecast?.direction === 'down' ? -1 : 1
+    const confidence = Math.max(0, Math.min(1, Number(forecast?.confidence) || 0))
+    const horizon = Math.max(1, Math.min(20, Number(forecast?.horizon_candles) || 5))
+    const volatility = Math.max((Math.max(...closes) - Math.min(...closes)) / closes.length * 1.8, last * 0.0008)
+    const prediction = showForecast && forecast ? Array.from({ length: horizon + 1 }, (_, index) => ({
+      value: last + direction * volatility * confidence * index,
+      spread: volatility * (0.7 + index * (1.1 - confidence) * 0.3),
+    })) : []
+    const allValues = [...closes, ...prediction.flatMap((point) => [point.value - point.spread, point.value + point.spread])]
+    const min = Math.min(...allValues)
+    const max = Math.max(...allValues)
+    const padding = Math.max((max - min) * 0.16, Math.abs(max) * 0.0005)
+    const low = min - padding
+    const high = max + padding
+    const top = 18
+    const bottom = 232
+    const y = (value) => bottom - ((value - low) / (high - low || 1)) * (bottom - top)
+    const historyWidth = prediction.length ? 550 : 700
+    const history = closes.map((value, index) => ({ x: index / Math.max(1, closes.length - 1) * historyWidth, y: y(value) }))
+    const future = prediction.map((point, index) => ({
+      x: historyWidth + (index / Math.max(1, prediction.length - 1)) * (700 - historyWidth),
+      y: y(point.value),
+      upper: y(point.value + point.spread),
+      lower: y(point.value - point.spread),
+    }))
+    const path = (points) => points.map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ')
+    const band = future.length ? `${future.map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(1)} ${point.upper.toFixed(1)}`).join(' ')} ${future.slice().reverse().map((point) => `L${point.x.toFixed(1)} ${point.lower.toFixed(1)}`).join(' ')} Z` : ''
+    return { high, low, history: path(history), future: path(future), band, historyEnd: history.at(-1), futureEnd: future.at(-1) }
+  }, [candles, forecast, showForecast])
+
+  if (!chart) return <div className="chart-placeholder">Historical candles appear here when the API is available.</div>
+  return (
+    <div className="chart-frame">
+      <div className="chart-axis"><span>{money(chart.high, digits)}</span><span>{money((chart.high + chart.low) / 2, digits)}</span><span>{money(chart.low, digits)}</span></div>
+      <svg className="market-chart" viewBox="0 0 700 250" preserveAspectRatio="none" role="img" aria-label="Historical prices and directional forecast">
+        <defs><linearGradient id="history-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#38aebd" stopOpacity=".17" /><stop offset="1" stopColor="#38aebd" stopOpacity="0" /></linearGradient></defs>
+        <path className="chart-grid" d="M0 18H700 M0 125H700 M0 232H700" />
+        <path className="history-area" d={`${chart.history} L${chart.historyEnd.x} 232 L0 232 Z`} />
+        <path className="history-line" d={chart.history} />
+        {showForecast && chart.band && <path className="forecast-band" d={chart.band} />}
+        {showForecast && chart.future && <path className="forecast-line" d={chart.future} />}
+        {chart.historyEnd && <circle className="current-point" cx={chart.historyEnd.x} cy={chart.historyEnd.y} r="4" />}
+        {showForecast && chart.futureEnd && <circle className="forecast-point" cx={chart.futureEnd.x} cy={chart.futureEnd.y} r="4" />}
+      </svg>
+      <div className="chart-times"><span>Oldest candle</span><span>Most recent</span>{showForecast && <span className="forecast-time">Model horizon</span>}</div>
+    </div>
+  )
 }
 
 function App() {
-  const [portfolio, setPortfolio] = useState(loadPortfolio)
-  const [selectedSymbol, setSelectedSymbol] = useState('NVDA')
-  const [side, setSide] = useState('BUY')
-  const [quantity, setQuantity] = useState('10')
-  const [range, setRange] = useState('1D')
-  const [notice, setNotice] = useState('')
+  const [page, setPage] = useState('trade')
+  const [selectedSymbol, setSelectedSymbol] = useState('SOL')
+  const [assetClass, setAssetClass] = useState('crypto')
+  const [side, setSide] = useState('buy')
+  const [quantity, setQuantity] = useState('1')
+  const [portfolio, setPortfolio] = useState(null)
+  const [portfolioLoading, setPortfolioLoading] = useState(true)
+  const [portfolioError, setPortfolioError] = useState('')
+  const [quote, setQuote] = useState(null)
+  const [candles, setCandles] = useState([])
+  const [marketLoading, setMarketLoading] = useState(true)
+  const [marketError, setMarketError] = useState('')
+  const [orderLoading, setOrderLoading] = useState(false)
+  const [orderMessage, setOrderMessage] = useState('')
+  const [receipts, setReceipts] = useState(loadReceipts)
+  const [forecastEnabled, setForecastEnabled] = useState(false)
+  const [trainedModels, setTrainedModels] = useState([])
+  const [selectedModelId, setSelectedModelId] = useState('')
+  const [forecast, setForecast] = useState(null)
+  const [forecastLoading, setForecastLoading] = useState(false)
+  const [leaderboard, setLeaderboard] = useState([])
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false)
+  const [leaderboardError, setLeaderboardError] = useState('')
+  const [news, setNews] = useState([])
+  const [newsLoading, setNewsLoading] = useState(false)
+  const [newsError, setNewsError] = useState('')
+  const [modelType, setModelType] = useState('lightgbm')
+  const [hyperparams, setHyperparams] = useState({ n_estimators: 200, max_depth: 4, learning_rate: 0.05, lookback: 30, horizon: 5, train_split: 0.8 })
+  const [training, setTraining] = useState(false)
+  const [trainingError, setTrainingError] = useState('')
+  const [trainingResult, setTrainingResult] = useState(null)
   const selectedAsset = assets.find((asset) => asset.symbol === selectedSymbol)
-  const holdings = Object.entries(portfolio.positions).filter(([, position]) => position.quantity > 0)
-  const positionsValue = holdings.reduce((total, [symbol, position]) => total + position.quantity * assets.find((asset) => asset.symbol === symbol).price, 0)
-  const totalValue = portfolio.cash + positionsValue
-  const totalCost = holdings.reduce((total, [, position]) => total + position.quantity * position.averagePrice, 0)
-  const totalPnl = positionsValue - totalCost
+  const openPositions = portfolio?.positions || []
+  const buyingPower = portfolio?.cash ?? null
+  const holdingsValue = portfolio ? portfolio.equity - portfolio.cash : null
+  const newsSentiment = news.length ? news.reduce((sum, item) => sum + Number(item.sentiment || 0), 0) / news.length : null
 
   useEffect(() => {
-    localStorage.setItem('paperdesk-portfolio', JSON.stringify(portfolio))
-  }, [portfolio])
+    let active = true
+    api.portfolio(userId).then((data) => {
+      if (active) { setPortfolio(data); setPortfolioError('') }
+    }).catch((error) => { if (active) setPortfolioError(error.message) }).finally(() => { if (active) setPortfolioLoading(false) })
+    return () => { active = false }
+  }, [])
 
-  function placeOrder(event) {
+  useEffect(() => {
+    let active = true
+    const requestTimer = setTimeout(() => {
+      setMarketLoading(true)
+      setMarketError('')
+      setQuote(null)
+      setCandles([])
+      Promise.all([api.price(selectedSymbol), api.candles(selectedSymbol, '1m', 120)]).then(([nextQuote, nextCandles]) => {
+        if (active) { setQuote(nextQuote); setCandles(nextCandles); setMarketError('') }
+      }).catch((error) => { if (active) setMarketError(error.message) }).finally(() => { if (active) setMarketLoading(false) })
+    }, 0)
+    return () => { active = false; clearTimeout(requestTimer) }
+  }, [selectedSymbol])
+
+  useEffect(() => {
+    if (page !== 'arena' || leaderboard.length) return
+    let active = true
+    Promise.resolve().then(() => {
+      setLeaderboardLoading(true)
+      setLeaderboardError('')
+      return api.leaderboard(20)
+    }).then((rows) => { if (active) setLeaderboard(rows) })
+      .catch((error) => { if (active) setLeaderboardError(error.message) })
+      .finally(() => { if (active) setLeaderboardLoading(false) })
+    return () => { active = false }
+  }, [page, leaderboard.length])
+
+  useEffect(() => {
+    if (page !== 'signals') return
+    let active = true
+    Promise.resolve().then(() => {
+      setNewsLoading(true)
+      setNewsError('')
+      return api.news(selectedSymbol, 20)
+    }).then((items) => { if (active) setNews(items) })
+      .catch((error) => { if (active) setNewsError(error.message) })
+      .finally(() => { if (active) setNewsLoading(false) })
+    return () => { active = false }
+  }, [page, selectedSymbol])
+
+  useEffect(() => {
+    if (!forecastEnabled || !selectedModelId) return
+    let active = true
+    const requestTimer = setTimeout(() => {
+      setForecastLoading(true)
+      api.predict(selectedModelId).then((result) => {
+        if (!active) return
+        if (result.symbol !== selectedSymbol) {
+          setForecast(null)
+          setOrderMessage(`The selected model returned ${result.symbol}; choose a model trained for ${selectedSymbol}.`)
+          return
+        }
+        setForecast(result)
+      })
+        .catch((error) => { if (active) { setForecast(null); setOrderMessage(error.message) } })
+        .finally(() => { if (active) setForecastLoading(false) })
+    }, 0)
+    return () => { active = false; clearTimeout(requestTimer) }
+  }, [forecastEnabled, selectedModelId, selectedSymbol])
+
+  async function refreshPortfolio() {
+    setPortfolioLoading(true)
+    setPortfolioError('')
+    try { setPortfolio(await api.portfolio(userId)) }
+    catch (error) { setPortfolioError(error.message) }
+    finally { setPortfolioLoading(false) }
+  }
+
+  async function placeOrder(event) {
     event.preventDefault()
     const amount = Number(quantity)
-    if (!Number.isInteger(amount) || amount <= 0) {
-      setNotice('Enter a whole number of shares.')
-      return
-    }
+    if (!Number.isFinite(amount) || amount <= 0) { setOrderMessage('Enter a quantity greater than zero.'); return }
+    if (!quote) { setOrderMessage('A backend price is required before placing an order.'); return }
+    setOrderLoading(true)
+    setOrderMessage('')
+    try {
+      const result = await api.order({ user_id: userId, symbol: selectedSymbol, side, qty: amount })
+      const receipt = { ...result, symbol: selectedSymbol, side, qty: amount, localTime: Date.now() }
+      setReceipts((current) => {
+        const next = [receipt, ...current].slice(0, 20)
+        localStorage.setItem('aerorithmetic-order-receipts', JSON.stringify(next))
+        return next
+      })
+      setOrderMessage(`${side === 'buy' ? 'Bought' : 'Sold'} ${amount} ${selectedSymbol} at ${money(result.fill_price)}.`)
+      await refreshPortfolio()
+    } catch (error) { setOrderMessage(error.message) }
+    finally { setOrderLoading(false) }
+  }
 
-    const position = portfolio.positions[selectedSymbol] || { quantity: 0, averagePrice: 0 }
-    if (side === 'BUY' && amount * selectedAsset.price > portfolio.cash) {
-      setNotice('Not enough buying power for this order.')
-      return
-    }
-    if (side === 'SELL' && amount > position.quantity) {
-      setNotice(`You only hold ${position.quantity} shares of ${selectedSymbol}.`)
-      return
-    }
+  async function trainModel(event) {
+    event.preventDefault()
+    setTraining(true)
+    setTrainingError('')
+    setTrainingResult(null)
+    try {
+      const result = await api.train({ symbol: selectedSymbol, model_type: modelType, hyperparams })
+      setTrainingResult(result)
+      const model = { id: result.model_id, type: modelType, symbol: selectedSymbol, createdAt: Date.now() }
+      setTrainedModels((current) => [model, ...current.filter((item) => item.id !== model.id)])
+      setSelectedModelId(result.model_id)
+      setForecastEnabled(true)
+    } catch (error) { setTrainingError(error.message) }
+    finally { setTraining(false) }
+  }
 
-    const nextQuantity = side === 'BUY' ? position.quantity + amount : position.quantity - amount
-    const nextAverage = side === 'BUY'
-      ? (position.quantity * position.averagePrice + amount * selectedAsset.price) / nextQuantity
-      : position.averagePrice
-    const order = {
-      id: Date.now(), side, symbol: selectedSymbol, quantity: amount,
-      price: selectedAsset.price,
-      time: new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date()),
-    }
+  function changeAssetClass(nextClass) {
+    setAssetClass(nextClass)
+    const firstAsset = assets.find((asset) => asset.type === nextClass)
+    if (firstAsset) selectAsset(firstAsset.symbol)
+  }
 
-    setPortfolio((current) => ({
-      cash: current.cash + (side === 'BUY' ? -1 : 1) * amount * selectedAsset.price,
-      positions: { ...current.positions, [selectedSymbol]: { quantity: nextQuantity, averagePrice: nextAverage } },
-      history: [order, ...current.history].slice(0, 12),
-    }))
-    setNotice(`${side === 'BUY' ? 'Bought' : 'Sold'} ${amount} ${selectedSymbol} at ${money(selectedAsset.price)}.`)
+  function selectAsset(symbol) {
+    setSelectedSymbol(symbol)
+    const asset = assets.find((item) => item.symbol === symbol)
+    if (asset) setAssetClass(asset.type)
+    setMarketLoading(true)
+    setMarketError('')
+    setQuote(null)
+    setCandles([])
+    setForecast(null)
+    setForecastEnabled(false)
+    setSelectedModelId('')
+  }
+
+  function updateHyperparam(name, value) {
+    setHyperparams((current) => ({ ...current, [name]: Number(value) }))
   }
 
   return (
-    <div className="terminal">
-      <aside className="rail">
-        <a className="brand-mark" href="#top" aria-label="Paperdesk home">p<span>.</span></a>
-        <nav className="rail-nav" aria-label="Main navigation">
-          <a className="rail-link selected" href="#overview" aria-label="Overview" title="Overview"><span>▦</span></a>
-          <a className="rail-link" href="#markets" aria-label="Markets" title="Markets"><span>⌁</span></a>
-          <a className="rail-link" href="#portfolio" aria-label="Portfolio" title="Portfolio"><span>◫</span></a>
+    <div className="aero-app">
+      <aside className="side-nav">
+        <a className="brand" href="#trade" onClick={(event) => { event.preventDefault(); setPage('trade') }} aria-label="Aerorithmetic home">
+          <span className="brand-glyph">a<span>+</span></span><span className="brand-name">aerorithmetic</span><small>Make cents of the future.</small>
+        </a>
+        <div className="nav-caption">WORKSPACE</div>
+        <nav aria-label="Main navigation">
+          {navItems.map((item) => <button className={`nav-item ${page === item.id ? 'nav-active' : ''}`} key={item.id} type="button" onClick={() => setPage(item.id)}><span className="nav-icon">{item.icon}</span><span>{item.label}</span>{page === item.id && <i />}</button>)}
         </nav>
-        <div className="avatar" title="Demo account">JD</div>
+        <div className="nav-bottom"><span className="api-led" /><span>API connection</span><strong className={portfolioError || marketError ? 'api-offline' : ''}>{portfolioError || marketError ? 'Check' : 'Ready'}</strong></div>
       </aside>
 
-      <main className="workspace" id="top">
+      <main className="main-shell">
         <header className="topbar">
-          <div className="wordmark">paper<span>desk</span><span className="demo-tag">SIMULATOR</span></div>
-          <div className="session-status"><span className="status-dot" /> Market open <span className="status-divider">/</span> Demo account</div>
-          <button className="reset-button" type="button" onClick={() => { localStorage.removeItem('paperdesk-portfolio'); setPortfolio(startingPortfolio); setNotice('Demo account reset.') }}>Reset account</button>
+          <div className="breadcrumb"><span>Workspace</span><b>/</b><strong>{navItems.find((item) => item.id === page)?.label}</strong></div>
+          <div className="topbar-right"><span className="market-pill"><i /> Simulator</span><button className="user-chip" type="button" title={`Backend user ${userId}`}><span>U</span><b>Demo account</b></button></div>
         </header>
 
-        <div className="page-content" id="overview">
-          <div className="page-heading">
-            <div><p className="eyebrow">MONDAY, OCTOBER 12, 2026 <span>·</span> PAPER TRADING</p><h1>Your market, your move.</h1></div>
-            <div className="account-chip"><span className="chip-label">ACCOUNT VALUE</span><strong>{money(totalValue)}</strong></div>
-          </div>
-
-          <section className="summary-grid" aria-label="Account summary">
-            <article className="summary-item"><span className="summary-label">PORTFOLIO VALUE</span><strong>{money(totalValue)}</strong><span className="summary-foot"><span className={totalPnl >= 0 ? 'positive' : 'negative'}>{totalPnl >= 0 ? '+' : ''}{money(totalPnl)}</span> all-time return</span></article>
-            <article className="summary-item"><span className="summary-label">BUYING POWER</span><strong>{money(portfolio.cash)}</strong><span className="summary-foot">Available to trade</span></article>
-            <article className="summary-item"><span className="summary-label">INVESTED</span><strong>{money(positionsValue)}</strong><span className="summary-foot">Across {holdings.length} positions</span></article>
-            <article className="summary-item summary-note"><span className="summary-label">PAPER ACCOUNT</span><strong>$100,000 <span>START</span></strong><span className="summary-foot">Practice with simulated funds</span></article>
-          </section>
-
-          <div className="trading-grid">
-            <section className="panel market-panel" id="markets">
-              <div className="panel-heading"><div><p className="eyebrow">MARKET WATCH</p><h2>Today’s movers</h2></div><span className="live-label"><span className="status-dot" /> SIMULATED</span></div>
-              <div className="watchlist">
-                {assets.map((asset) => (
-                  <button className={`watch-row ${selectedSymbol === asset.symbol ? 'active' : ''}`} key={asset.symbol} onClick={() => { setSelectedSymbol(asset.symbol); setNotice('') }} type="button">
-                    <span className="ticker-badge" style={{ '--ticker-color': asset.color }}>{asset.symbol.slice(0, 1)}</span>
-                    <span className="ticker-name"><strong>{asset.symbol}</strong><small>{asset.name}</small></span>
-                    <span className="mini-chart"><svg viewBox="0 0 60 24" preserveAspectRatio="none" aria-hidden="true"><path d={asset.path} /></svg></span>
-                    <span className="ticker-quote"><strong>{money(asset.price)}</strong><small className={asset.change >= 0 ? 'positive' : 'negative'}>{asset.change > 0 ? '+' : ''}{asset.change}%</small></span>
-                  </button>
-                ))}
-              </div>
-              <div className="market-footnote">Quotes are illustrative and do not reflect live market data.</div>
+        <div className="page-body">
+          {page === 'trade' && <>
+            <div className="page-title-row"><div><p className="kicker">TRADE DESK <span>·</span> PAPER MARKETS</p><h1>Make your next move.</h1><p className="page-subtitle">Build conviction before you put capital on the line.</p></div><div className="account-value"><span>ACCOUNT EQUITY</span><strong>{portfolio ? money(portfolio.equity) : '—'}</strong><small>{portfolio ? `${percent(portfolio.pnl_pct, true)} total return` : 'Waiting for account data'}</small></div></div>
+            <section className="summary-strip" aria-label="Portfolio summary">
+              <div className="summary-cell"><span>Cash available</span><strong>{buyingPower === null ? '—' : money(buyingPower)}</strong><small>Backend buying power</small></div>
+              <div className="summary-cell"><span>Invested value</span><strong>{holdingsValue === null ? '—' : money(holdingsValue)}</strong><small>{openPositions.length} open positions</small></div>
+              <div className="summary-cell"><span>Total return</span><strong className={portfolio?.pnl >= 0 ? 'positive' : 'negative'}>{portfolio ? `${portfolio.pnl >= 0 ? '+' : ''}${money(portfolio.pnl)}` : '—'}</strong><small>{portfolio ? percent(portfolio.pnl_pct, true) : 'From starting equity'}</small></div>
+              <div className="summary-mark"><span className="sparkle">✳</span><span>Simulation account</span><small>Starting capital $100,000</small></div>
             </section>
 
-            <section className="panel chart-panel">
-              <div className="chart-topline"><div><p className="eyebrow">{selectedAsset.name.toUpperCase()}</p><h2>{selectedAsset.symbol} <span>· NASDAQ</span></h2></div><div className="quote-block"><strong>{money(selectedAsset.price)}</strong><span className={selectedAsset.change >= 0 ? 'positive' : 'negative'}>{selectedAsset.change > 0 ? '+' : ''}{selectedAsset.change}% today</span></div></div>
-              <div className="chart-wrap">
-                <div className="chart-values"><span>{money(selectedAsset.price + 5)}</span><span>{money(selectedAsset.price - 3)}</span><span>{money(selectedAsset.price - 11)}</span></div>
-                <svg className={`price-chart ${selectedAsset.change < 0 ? 'chart-down' : ''}`} viewBox="0 0 600 190" preserveAspectRatio="none" role="img" aria-label={`${selectedAsset.symbol} illustrative price chart`}>
-                  <defs><linearGradient id="chart-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="currentColor" stopOpacity=".19" /><stop offset="1" stopColor="currentColor" stopOpacity="0" /></linearGradient></defs>
-                  <path className="chart-gridline" d="M0 24H600 M0 71H600 M0 118H600 M0 165H600" />
-                  <path className="chart-area" d={`${selectedAsset.path.replaceAll(/(\d+)(\.\d+)?/g, (match, number, decimal = '') => `${Number(number) * (600 / 220)}${decimal}`)} L600 190 L0 190 Z`} />
-                  <path className="chart-line" d={selectedAsset.path.replaceAll(/(\d+)(\.\d+)?/g, (match, number, decimal = '') => `${Number(number) * (600 / 220)}${decimal}`)} />
-                </svg>
-                <div className="chart-times"><span>09:30</span><span>11:00</span><span>12:30</span><span>14:00</span><span>16:00</span></div>
-              </div>
-              <div className="range-row" aria-label="Chart time range">{['1D', '1W', '1M', '3M', '1Y', 'ALL'].map((item) => <button className={range === item ? 'range-active' : ''} key={item} type="button" onClick={() => setRange(item)}>{item}</button>)}<span className="chart-caption">Illustrative performance</span></div>
-            </section>
+            <div className="trade-layout">
+              <section className="glass-panel chart-panel-main">
+                <div className="section-heading"><div><p className="kicker">MARKET OVERVIEW</p><h2>Price action</h2></div><div className="class-switch" aria-label="Asset class">{['stock', 'crypto', 'forex'].map((kind) => <button className={assetClass === kind ? 'class-selected' : ''} key={kind} type="button" onClick={() => changeAssetClass(kind)}>{kind === 'stock' ? 'Stocks' : kind === 'crypto' ? 'Crypto' : 'Forex'}</button>)}</div></div>
+                <div className="symbol-line"><label className="symbol-select"><select aria-label="Select asset" value={selectedSymbol} onChange={(event) => selectAsset(event.target.value)}>{assets.filter((asset) => asset.type === assetClass).map((asset) => <option key={asset.symbol} value={asset.symbol}>{asset.symbol} · {asset.name}</option>)}</select><span>⌄</span></label><div className="live-quote"><strong>{quote ? money(quote.price, selectedAsset?.type === 'forex' ? 4 : 2) : '—'}</strong><span>{quote ? `Backend sample · ${formatTime(quote.ts)}` : 'API quote'}</span></div></div>
+                <StatusMessage loading={marketLoading} error={marketError} />
+                {!marketLoading && !marketError && <>
+                  <PriceChart candles={candles} forecast={forecast} showForecast={forecastEnabled && Boolean(forecast)} digits={selectedAsset?.type === 'forex' ? 4 : 2} />
+                  <div className="chart-legend"><span><i className="legend-history" /> Historical price <small>backend sample candles</small></span>{forecastEnabled && <span><i className="legend-forecast" /> AI directional estimate <small>not an API price target</small></span>}</div>
+                </>}
+                <div className="forecast-tools"><label className="toggle-control"><input type="checkbox" checked={forecastEnabled} onChange={(event) => { setForecastEnabled(event.target.checked); if (!event.target.checked) setForecast(null) }} /><span className="toggle-track" /><b>AI forecast</b></label><select aria-label="Select trained model" value={selectedModelId} onChange={(event) => { setSelectedModelId(event.target.value); setForecast(null); setForecastEnabled(Boolean(event.target.value)) }}><option value="">Select trained model</option>{trainedModels.filter((model) => model.symbol === selectedSymbol).map((model) => <option key={model.id} value={model.id}>{model.type.replace('_', ' ')} · {model.symbol} · {model.id}</option>)}</select><button className="text-action" type="button" onClick={() => setPage('lab')}>Train model <span>↗</span></button></div>
+                {forecastEnabled && <p className="forecast-note">{forecastLoading ? 'Loading prediction…' : forecast ? `Backend sample predicts ${forecast.direction} with ${(Number(forecast.confidence) * 100).toFixed(0)}% confidence over ${forecast.horizon_candles} candles. Orange path and shaded range are a directional visualization, not a backend price target.` : 'Train a model in Model Lab, then select it to request a directional forecast.'}</p>}
+              </section>
 
-            <section className="panel order-panel">
-              <div className="panel-heading"><div><p className="eyebrow">PLACE AN ORDER</p><h2>Trade {selectedAsset.symbol}</h2></div><span className="order-type">MARKET</span></div>
-              <div className="side-switch" role="group" aria-label="Order side"><button className={side === 'BUY' ? 'buy-selected' : ''} type="button" onClick={() => { setSide('BUY'); setNotice('') }}>Buy</button><button className={side === 'SELL' ? 'sell-selected' : ''} type="button" onClick={() => { setSide('SELL'); setNotice('') }}>Sell</button></div>
-              <form onSubmit={placeOrder}>
-                <label className="field-label" htmlFor="quantity">SHARES</label>
-                <div className="quantity-control"><button type="button" aria-label="Decrease shares" onClick={() => setQuantity(String(Math.max(1, Number(quantity || 1) - 1)))}>−</button><input id="quantity" type="number" min="1" step="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} /><button type="button" aria-label="Increase shares" onClick={() => setQuantity(String(Number(quantity || 0) + 1))}>+</button></div>
-                <div className="order-detail"><span>Market price</span><strong>{money(selectedAsset.price)}</strong></div>
-                <div className="order-detail"><span>Estimated total</span><strong>{money((Number(quantity) || 0) * selectedAsset.price)}</strong></div>
-                <div className="order-detail buying-power"><span>Buying power</span><strong>{money(portfolio.cash)}</strong></div>
-                <button className={`submit-order ${side === 'SELL' ? 'submit-sell' : ''}`} type="submit">{side} {selectedAsset.symbol}<span>↗</span></button>
-                <p className={`order-notice ${notice.startsWith('Not') || notice.startsWith('Enter') || notice.startsWith('You') ? 'notice-error' : ''}`} aria-live="polite">{notice || 'Orders execute instantly at the displayed price.'}</p>
-              </form>
-            </section>
+              <section className="glass-panel order-panel-main">
+                <div className="section-heading"><div><p className="kicker">PAPER ORDER</p><h2>Place a trade</h2></div><span className="market-order-label">MARKET</span></div>
+                <div className="order-switch"><button className={side === 'buy' ? 'buy-active' : ''} type="button" onClick={() => { setSide('buy'); setOrderMessage('') }}>Buy</button><button className={side === 'sell' ? 'sell-active' : ''} type="button" onClick={() => { setSide('sell'); setOrderMessage('') }}>Sell</button></div>
+                <form className="order-form" onSubmit={placeOrder}>
+                  <label htmlFor="order-qty">Quantity <span>fractional allowed</span></label>
+                  <input id="order-qty" type="number" min="0.000001" step="any" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+                  <div className="order-estimate"><span>Asset</span><b>{selectedSymbol}</b></div><div className="order-estimate"><span>Backend price</span><b>{quote ? money(quote.price) : '—'}</b></div><div className="order-estimate estimate-total"><span>Estimated total</span><b>{quote ? money(Number(quantity || 0) * quote.price) : '—'}</b></div>
+                  <button className={`place-order ${side === 'sell' ? 'place-sell' : ''}`} type="submit" disabled={orderLoading || !quote}>{orderLoading ? 'Submitting order…' : `${side === 'buy' ? 'Buy' : 'Sell'} ${selectedSymbol}`}<span>↗</span></button>
+                  <p className="order-feedback" aria-live="polite">{orderMessage || (portfolioLoading ? 'Loading buying power…' : portfolioError || `Buying power ${buyingPower === null ? '—' : money(buyingPower)}`)}</p>
+                </form>
+              </section>
 
-            <section className="panel portfolio-panel" id="portfolio">
-              <div className="panel-heading"><div><p className="eyebrow">YOUR POSITIONS</p><h2>Portfolio</h2></div><span className="position-count">{holdings.length} OPEN</span></div>
-              <div className="table-scroll"><table><thead><tr><th>ASSET</th><th>SHARES</th><th>AVG. COST</th><th>MARK VALUE</th><th>RETURN</th></tr></thead><tbody>
-                {holdings.length ? holdings.map(([symbol, position]) => {
-                  const asset = assets.find((item) => item.symbol === symbol)
-                  const pnl = (asset.price - position.averagePrice) * position.quantity
-                  return <tr key={symbol}><td><button className="portfolio-ticker" type="button" onClick={() => setSelectedSymbol(symbol)}><span className="ticker-badge" style={{ '--ticker-color': asset.color }}>{symbol.slice(0, 1)}</span><strong>{symbol}</strong></button></td><td>{position.quantity}</td><td>{money(position.averagePrice)}</td><td>{money(asset.price * position.quantity)}</td><td className={pnl >= 0 ? 'positive' : 'negative'}>{pnl >= 0 ? '+' : ''}{money(pnl)}</td></tr>
-                }) : <tr><td className="empty-state" colSpan="5">No positions yet. Place your first trade above.</td></tr>}
-              </tbody></table></div>
-            </section>
+              <section className="glass-panel positions-panel">
+                <div className="section-heading"><div><p className="kicker">ACCOUNT HOLDINGS</p><h2>Your positions</h2></div><button className="text-action" type="button" onClick={() => setPage('portfolio')}>View portfolio <span>↗</span></button></div>
+                <StatusMessage loading={portfolioLoading} error={portfolioError} empty={!openPositions.length && portfolio ? 'No open positions yet. Place an order to begin.' : null}>
+                  <div className="table-scroll"><table><thead><tr><th>Asset</th><th>Shares</th><th>Avg. cost</th><th>Market value</th><th>Unrealized P/L</th></tr></thead><tbody>{openPositions.map((position) => <tr key={position.symbol}><td><button className="table-asset" type="button" onClick={() => { selectAsset(position.symbol); setPage('trade') }}><span className="asset-token">{position.symbol.slice(0, 1)}</span><b>{position.symbol}</b></button></td><td>{Number(position.qty).toLocaleString('en-US')}</td><td>{money(position.avg_price)}</td><td>{money(position.last_price * position.qty)}</td><td className={position.unrealized_pnl >= 0 ? 'positive' : 'negative'}>{position.unrealized_pnl >= 0 ? '+' : ''}{money(position.unrealized_pnl)}</td></tr>)}</tbody></table></div>
+                </StatusMessage>
+              </section>
+            </div>
+          </>}
 
-            <section className="panel activity-panel">
-              <div className="panel-heading"><div><p className="eyebrow">RECENT ORDERS</p><h2>Activity</h2></div><span className="position-count">{portfolio.history.length} ORDERS</span></div>
-              <div className="activity-list">{portfolio.history.slice(0, 5).map((order) => <div className="activity-row" key={order.id}><span className={`activity-icon ${order.side.toLowerCase()}`}>{order.side === 'BUY' ? '↓' : '↑'}</span><span className="activity-description"><strong>{order.side} {order.symbol}</strong><small>{order.quantity} shares · {money(order.price)}</small></span><time>{order.time}</time></div>)}</div>
-            </section>
-          </div>
-          <footer className="disclaimer">Paperdesk is a trading simulator. Quotes and executions are simulated and are not investment advice.</footer>
+          {page === 'arena' && <>
+            <div className="page-title-row"><div><p className="kicker">HUMAN VS. MACHINE</p><h1>The Arena</h1><p className="page-subtitle">Compare trader performance from the leaderboard API.</p></div><span className="soft-badge">{leaderboardLoading ? 'CONNECTING' : leaderboardError ? 'API OFFLINE' : leaderboard.length ? 'BACKEND SAMPLE' : 'NO DATA'}</span></div>
+            <section className="glass-panel arena-panel"><div className="section-heading"><div><p className="kicker">LEADERBOARD</p><h2>Performance rankings</h2></div><span className="muted-label">Ranked by equity return</span></div><StatusMessage loading={leaderboardLoading} error={leaderboardError} empty={!leaderboard.length && !leaderboardLoading ? 'The backend has no leaderboard entries yet.' : null}><div className="leaderboard-table-wrap"><table className="leaderboard-table"><thead><tr><th>Rank</th><th>Trader</th><th>Type</th><th>Equity</th><th>Return</th><th>Comparison</th></tr></thead><tbody>{leaderboard.map((row) => <tr key={`${row.rank}-${row.name}`}><td><span className={`rank-number ${row.rank === 1 ? 'rank-first' : ''}`}>{String(row.rank).padStart(2, '0')}</span></td><td><span className="leader-name"><span className={`leader-avatar ${row.is_bot ? 'bot-avatar' : ''}`}>{row.is_bot ? 'AI' : row.name.slice(0, 1).toUpperCase()}</span><b>{row.name}</b></span></td><td><span className={`identity-pill ${row.is_bot ? 'identity-ai' : ''}`}>{row.is_bot ? 'AI model' : 'Human'}</span></td><td>{money(row.equity)}</td><td className={row.pnl_pct >= 0 ? 'positive' : 'negative'}>{row.pnl_pct >= 0 ? '+' : ''}{percent(row.pnl_pct)}</td><td><div className="return-track"><i style={{ width: `${Math.max(2, Math.min(100, Math.abs(row.pnl_pct) * 10))}%` }} className={row.pnl_pct < 0 ? 'track-negative' : ''} /></div></td></tr>)}</tbody></table></div><div className="arena-footnote">The backend currently returns sample rankings and only equity and return metrics.</div></StatusMessage></section>
+            <section className="arena-summary-grid">{leaderboard.slice(0, 2).map((row) => <article className="glass-panel arena-stat" key={row.name}><span className="identity-pill">{row.is_bot ? 'AI MODEL' : 'HUMAN TRADER'}</span><h2>{row.name}</h2><strong className={row.pnl_pct >= 0 ? 'positive' : 'negative'}>{row.pnl_pct >= 0 ? '+' : ''}{percent(row.pnl_pct)}</strong><small>{money(row.equity)} equity · Rank #{row.rank}</small></article>)}</section>
+          </>}
+
+          {page === 'lab' && <>
+            <div className="page-title-row"><div><p className="kicker">TRAIN. TEST. COMPETE.</p><h1>Model Lab</h1><p className="page-subtitle">Configure a supported model and run it through the backend training endpoint.</p></div><span className="soft-badge">3 SUPPORTED MODELS</span></div>
+            <div className="lab-layout"><section className="glass-panel model-config"><div className="section-heading"><div><p className="kicker">CONFIGURATION</p><h2>Model parameters</h2></div></div><form onSubmit={trainModel}><label className="form-label" htmlFor="model-type">Model type</label><select id="model-type" value={modelType} onChange={(event) => setModelType(event.target.value)}>{modelOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select><label className="form-label" htmlFor="model-symbol">Training asset</label><select id="model-symbol" value={selectedSymbol} onChange={(event) => selectAsset(event.target.value)}>{assets.map((asset) => <option key={asset.symbol} value={asset.symbol}>{asset.symbol} · {asset.name}</option>)}</select><div className="parameter-grid">{[['n_estimators', 'Trees', 10, 1000, 10], ['max_depth', 'Max depth', 1, 20, 1], ['learning_rate', 'Learning rate', 0.001, 0.5, 0.001], ['lookback', 'Lookback candles', 5, 200, 1], ['horizon', 'Forecast horizon', 1, 30, 1], ['train_split', 'Training split', 0.5, 0.95, 0.05]].map(([key, label, min, max, step]) => <label className="parameter-field" key={key}><span>{label}</span><input type="number" min={min} max={max} step={step} value={hyperparams[key]} onChange={(event) => updateHyperparam(key, event.target.value)} /></label>)}</div><button className="primary-action" type="submit" disabled={training}>{training ? 'Training with backend…' : 'Train and backtest'}<span>✳</span></button>{trainingError && <p className="inline-error" role="alert">{trainingError}</p>}</form></section>
+              <section className="glass-panel results-panel"><div className="section-heading"><div><p className="kicker">BACKTEST OUTPUT</p><h2>Model results</h2></div>{trainingResult && <span className="soft-badge">API SAMPLE · {trainingResult.model_id}</span>}</div>{!trainingResult ? <div className="empty-results"><span className="result-glyph">⌁</span><p>Train a model to see backend-reported metrics and backtest results here.</p></div> : <><div className="metrics-grid"><div><span>Accuracy</span><strong>{percent(trainingResult.metrics?.accuracy, true)}</strong></div><div><span>Precision</span><strong>{percent(trainingResult.metrics?.precision, true)}</strong></div><div><span>Sharpe ratio</span><strong>{trainingResult.backtest?.sharpe ?? '—'}</strong></div><div><span>Max drawdown</span><strong>{percent(trainingResult.backtest?.max_drawdown, true)}</strong></div><div><span>Training time</span><strong>{trainingResult.train_seconds ? `${Number(trainingResult.train_seconds).toFixed(1)}s` : '—'}</strong></div></div><div className="result-equity"><span>Backtest equity curve</span>{trainingResult.backtest?.equity_curve?.length ? <div className="equity-points">{trainingResult.backtest.equity_curve.map((point, index) => <span key={`${point.ts}-${index}`} title={`${formatTime(point.ts)} · ${money(point.equity)}`} style={{ height: `${Math.min(100, Math.max(12, point.equity / Math.max(...trainingResult.backtest.equity_curve.map((item) => item.equity)) * 100))}%` }} />)}</div> : <p>No equity curve was returned by the backend.</p>}</div></>}</section>
+            </div>
+            <section className="glass-panel supported-models"><p className="kicker">AVAILABLE THROUGH THE API</p><div>{modelOptions.map((model) => <span key={model.id}>{model.label}<i>✓</i></span>)}</div></section>
+          </>}
+
+          {page === 'signals' && <>
+            <div className="page-title-row"><div><p className="kicker">NEWS. SENTIMENT. OPPORTUNITY.</p><h1>Market Signals</h1><p className="page-subtitle">Stories and sentiment returned by the configured news feed.</p></div><label className="symbol-select signals-select"><select aria-label="News asset" value={selectedSymbol} onChange={(event) => selectAsset(event.target.value)}>{assets.map((asset) => <option key={asset.symbol} value={asset.symbol}>{asset.symbol}</option>)}</select><span>⌄</span></label></div>
+            <div className="signals-layout"><section className="glass-panel news-panel"><div className="section-heading"><div><p className="kicker">LATEST COVERAGE</p><h2>{selectedSymbol} news</h2></div><span className="soft-badge">BACKEND SAMPLE FEED</span></div><StatusMessage loading={newsLoading} error={newsError} empty={!news.length && !newsLoading ? 'No news items were returned for this asset.' : null}>{news.map((item, index) => <article className="news-item" key={`${item.ts}-${index}`}><div className="news-meta"><span>{item.source}</span><time>{item.ts ? formatTime(item.ts) : 'Time unavailable'}</time></div><a href={item.url} target="_blank" rel="noreferrer"><h3>{item.headline}</h3></a><p>{item.summary}</p><div className="news-bottom"><span>{item.symbol}</span><span className={`sentiment-tag ${Number(item.sentiment) >= 0 ? 'sentiment-positive' : 'sentiment-negative'}`}>Sentiment {Number(item.sentiment) > 0 ? '+' : ''}{Number(item.sentiment).toFixed(2)}</span></div></article>)}</StatusMessage></section><aside className="glass-panel insight-panel"><p className="kicker">AI INSIGHT</p><h2>{selectedSymbol}</h2><div className="sentiment-score">{newsSentiment === null ? '—' : `${newsSentiment > 0 ? '+' : ''}${newsSentiment.toFixed(2)}`}</div><span className="muted-label">Mean news sentiment</span><div className="sentiment-meter"><i style={{ width: `${newsSentiment === null ? 0 : Math.max(0, Math.min(100, (newsSentiment + 1) * 50))}%` }} /></div><p className="insight-copy">{news.length ? 'The current backend news route returns example feed data; sentiment is computed from that response. Not a trading recommendation.' : 'Sentiment becomes available when the news API returns scored items.'}</p></aside></div>
+          </>}
+
+          {page === 'portfolio' && <>
+            <div className="page-title-row"><div><p className="kicker">YOUR PAPER ACCOUNT</p><h1>Portfolio</h1><p className="page-subtitle">Balances and positions are read directly from your backend account.</p></div><button className="secondary-action" type="button" onClick={refreshPortfolio} disabled={portfolioLoading}>{portfolioLoading ? 'Refreshing…' : 'Refresh account'}↻</button></div>
+            <section className="summary-strip portfolio-summary"><div className="summary-cell"><span>Account equity</span><strong>{portfolio ? money(portfolio.equity) : '—'}</strong><small>Total account value</small></div><div className="summary-cell"><span>Cash balance</span><strong>{portfolio ? money(portfolio.cash) : '—'}</strong><small>Available buying power</small></div><div className="summary-cell"><span>Total return</span><strong className={portfolio?.pnl >= 0 ? 'positive' : 'negative'}>{portfolio ? `${portfolio.pnl >= 0 ? '+' : ''}${money(portfolio.pnl)}` : '—'}</strong><small>{portfolio ? percent(portfolio.pnl_pct, true) : 'Since account start'}</small></div></section>
+            <section className="glass-panel full-positions"><div className="section-heading"><div><p className="kicker">MARK-TO-MARKET</p><h2>Open positions</h2></div><span className="muted-label">{openPositions.length} assets</span></div><StatusMessage loading={portfolioLoading} error={portfolioError} empty={!openPositions.length && portfolio ? 'No open positions in this account.' : null}><div className="table-scroll"><table><thead><tr><th>Asset</th><th>Quantity</th><th>Average price</th><th>Last price</th><th>Market value</th><th>Unrealized P/L</th></tr></thead><tbody>{openPositions.map((position) => <tr key={position.symbol}><td><button className="table-asset" type="button" onClick={() => { selectAsset(position.symbol); setPage('trade') }}><span className="asset-token">{position.symbol.slice(0, 1)}</span><b>{position.symbol}</b></button></td><td>{Number(position.qty).toLocaleString('en-US')}</td><td>{money(position.avg_price)}</td><td>{money(position.last_price)}</td><td>{money(position.last_price * position.qty)}</td><td className={position.unrealized_pnl >= 0 ? 'positive' : 'negative'}>{position.unrealized_pnl >= 0 ? '+' : ''}{money(position.unrealized_pnl)}</td></tr>)}</tbody></table></div></StatusMessage></section>
+            <section className="glass-panel receipts-panel"><div className="section-heading"><div><p className="kicker">LOCAL ORDER RECEIPTS</p><h2>Recent orders</h2></div><span className="muted-label">Successful backend responses saved in this browser</span></div>{receipts.length ? <div className="receipt-list">{receipts.map((receipt) => <div className="receipt-row" key={receipt.order_id}><span className={`receipt-side ${receipt.side}`}>{receipt.side.toUpperCase()}</span><b>{receipt.symbol}</b><span>{receipt.qty} units</span><span>{money(receipt.fill_price)}</span><span>{receipt.status}</span><time>{formatTime(receipt.ts)}</time></div>)}</div> : <div className="empty-results compact-empty">No successful orders recorded in this browser yet.</div>}</section>
+          </>}
+          <footer className="page-footer"><span>AERORITHMETIC <b>·</b> MAKE CENTS OF THE FUTURE.</span><span>Practice only. Not investment advice.</span></footer>
         </div>
       </main>
     </div>

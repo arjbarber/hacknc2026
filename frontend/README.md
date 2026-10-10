@@ -1,16 +1,26 @@
-# React + Vite
+# Aerorithmetic frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Aerorithmetic is a responsive paper-trading interface for stocks, crypto, and forex. Prices, candles, orders, balances, leaderboard rows, model results, and news use the FastAPI endpoints documented in `../shared/API.md`.
 
-Currently, two official plugins are available:
+## Run locally
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```sh
+cp .env.example .env
+npm install
+npm run dev
+```
 
-## React Compiler
+Start the FastAPI service separately on port 8000. Set `VITE_API_URL` in `frontend/.env` or in the deployment build environment when the API is hosted elsewhere. Only the API base URL is exposed to the browser; provider credentials stay on the backend.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Build
 
-## Expanding the ESLint configuration
+```sh
+npm run build
+npm run lint
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+From the repository root, the production build can also be run with `npm --prefix frontend run build`.
+
+## Data notes
+
+The browser gets a persistent anonymous `user_id` for the backend paper account. Recent order receipts are saved locally because the API contract has no order-history endpoint. The current backend returns sample values for market prices/candles, leaderboard, model training/prediction, and news; those sections are labeled as sample data. Account balances and successful order fills are read from backend responses.
