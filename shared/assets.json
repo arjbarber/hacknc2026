@@ -1,0 +1,33 @@
+[
+  {"symbol":"SOL",  "name":"Solana",    "class":"crypto", "provider":"binance", "provider_symbol":"SOLUSDT"},
+  {"symbol":"BTC",  "name":"Bitcoin",   "class":"crypto", "provider":"binance", "provider_symbol":"BTCUSDT"},
+  {"symbol":"ETH",  "name":"Ethereum",  "class":"crypto", "provider":"binance", "provider_symbol":"ETHUSDT"},
+  {"symbol":"JUP",  "name":"Jupiter",   "class":"crypto", "provider":"binance", "provider_symbol":"JUPUSDT"},
+  {"symbol":"BONK", "name":"Bonk",      "class":"crypto", "provider":"binance", "provider_symbol":"BONKUSDT"},
+
+  {"symbol":"EURUSD","name":"Euro / US Dollar",     "class":"forex", "provider":"twelvedata", "provider_symbol":"EUR/USD"},
+  {"symbol":"GBPUSD","name":"Pound / US Dollar",    "class":"forex", "provider":"twelvedata", "provider_symbol":"GBP/USD"},
+  {"symbol":"USDJPY","name":"US Dollar / Yen",      "class":"forex", "provider":"twelvedata", "provider_symbol":"USD/JPY"},
+  {"symbol":"AUDUSD","name":"Aussie / US Dollar",   "class":"forex", "provider":"twelvedata", "provider_symbol":"AUD/USD"},
+  {"symbol":"USDCAD","name":"US Dollar / CAD",      "class":"forex", "provider":"twelvedata", "provider_symbol":"USD/CAD"},
+  {"symbol":"USDCHF","name":"US Dollar / CHF",      "class":"forex", "provider":"twelvedata", "provider_symbol":"USD/CHF"},
+
+  {"symbol":"AAPL","name":"Apple",            "class":"stock","provider":"finnhub","provider_symbol":"AAPL"},
+  {"symbol":"MSFT","name":"Microsoft",        "class":"stock","provider":"finnhub","provider_symbol":"MSFT"},
+  {"symbol":"NVDA","name":"Nvidia",           "class":"stock","provider":"finnhub","provider_symbol":"NVDA"},
+  {"symbol":"AMZN","name":"Amazon",           "class":"stock","provider":"finnhub","provider_symbol":"AMZN"},
+  {"symbol":"GOOGL","name":"Alphabet",        "class":"stock","provider":"finnhub","provider_symbol":"GOOGL"},
+  {"symbol":"META","name":"Meta",             "class":"stock","provider":"finnhub","provider_symbol":"META"},
+  {"symbol":"TSLA","name":"Tesla",            "class":"stock","provider":"finnhub","provider_symbol":"TSLA"},
+  {"symbol":"JPM", "name":"JPMorgan Chase",   "class":"stock","provider":"finnhub","provider_symbol":"JPM"},
+  {"symbol":"WMT", "name":"Walmart",          "class":"stock","provider":"finnhub","provider_symbol":"WMT"},
+  {"symbol":"XOM", "name":"ExxonMobil",       "class":"stock","provider":"finnhub","provider_symbol":"XOM"},
+  {"symbol":"UNH", "name":"UnitedHealth",     "class":"stock","provider":"finnhub","provider_symbol":"UNH"},
+  {"symbol":"JNJ", "name":"Johnson & Johnson","class":"stock","provider":"finnhub","provider_symbol":"JNJ"},
+  {"symbol":"HD",  "name":"Home Depot",       "class":"stock","provider":"finnhub","provider_symbol":"HD"},
+  {"symbol":"KO",  "name":"Coca-Cola",        "class":"stock","provider":"finnhub","provider_symbol":"KO"},
+  {"symbol":"BAC", "name":"Bank of America",  "class":"stock","provider":"finnhub","provider_symbol":"BAC"},
+  {"symbol":"COST","name":"Costco",           "class":"stock","provider":"finnhub","provider_symbol":"COST"},
+  {"symbol":"DIS", "name":"Disney",           "class":"stock","provider":"finnhub","provider_symbol":"DIS"},
+  {"symbol":"PFE", "name":"Pfizer",           "class":"stock","provider":"finnhub","provider_symbol":"PFE"}
+]
