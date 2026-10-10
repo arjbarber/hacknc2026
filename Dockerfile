@@ -13,9 +13,12 @@ RUN npm run build
 
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y curl supervisor && \
+RUN apt-get update && apt-get install -y curl supervisor ca-certificates && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
+    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg -o /usr/share/keyrings/cloudflare-main.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared bookworm main" | tee /etc/apt/sources.list.d/cloudflared.list && \
+    apt-get update && apt-get install -y cloudflared && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -51,6 +54,16 @@ command=npm run preview -- --host 0.0.0.0 --port 3001\n\
 directory=/app/ig-turing/aqua-exe\n\
 autostart=true\n\
 autorestart=true\n\
+\n\
+[program:cloudflared]\n\
+command=cloudflared tunnel --url http://127.0.0.1:8000\n\
+directory=/app\n\
+autostart=true\n\
+autorestart=true\n\
+stdout_logfile=/dev/stdout\n\
+stdout_logfile_maxbytes=0\n\
+stderr_logfile=/dev/stderr\n\
+stderr_logfile_maxbytes=0\n\
 " > /etc/supervisor/conf.d/supervisord.conf
 
 # Expose ports
