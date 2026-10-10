@@ -6,12 +6,18 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
+from ml.api import router as ml_router
+
 load_dotenv()
 DB_URL = os.getenv("TIGER_DATABASE_URL")
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])  # lets Next.js call it
+
+# Model routes (/models/train, /models/{id}/predict, /models/{id}/overlay, /history/{symbol})
+# come from the ML package, trained on real hourly history.
+app.include_router(ml_router)
 
 def get_connection():
     return psycopg.connect(DB_URL)
@@ -152,17 +158,6 @@ def portfolio(user_id: str):
 def leaderboard(limit: int = 20):
     return [{"rank": 1, "name": "alice", "is_bot": False, "equity": 104200.1, "pnl_pct": 4.2},
             {"rank": 2, "name": "LightGBM-SOL-bot", "is_bot": True, "equity": 103100.5, "pnl_pct": 3.1}]
-
-@app.post("/models/train")
-def train(body: dict):
-    return {"model_id": "m_42", "metrics": {"accuracy": 0.53, "precision": 0.54},
-            "backtest": {"equity_curve": [{"ts": 1760000000000, "equity": 100000}],
-                         "sharpe": 0.4, "max_drawdown": 0.08}, "train_seconds": 3.1}
-
-@app.get("/models/{model_id}/predict")
-def predict(model_id: str):
-    return {"model_id": model_id, "symbol": "SOL", "direction": "up",
-            "confidence": 0.61, "horizon_candles": 5, "ts": 1760000000000}
 
 @app.get("/news")
 def news(symbol: str = "SOL", limit: int = 20):

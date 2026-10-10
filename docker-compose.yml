@@ -1,33 +1,15 @@
 # Run everything:  docker compose up --build
-#   8000 FastAPI backend   3000 frontend   3001 aqua-exe
+#   8000 FastAPI backend   3000 frontend   3001 aqua-exe   8100 Model Lab (ML dev page)
 #
-# The root Dockerfile is used as-is: it installs backend/requirements.txt only.
-# The `app` image adds the ML layer on top (ml/requirements.txt + libgomp1, which
-# LightGBM needs on Linux), so each team keeps its own requirements file.
+# Both services use the root Dockerfile, which installs backend/requirements.txt
+# and ml/requirements.txt.
 
 services:
-  # The team Dockerfile, built unchanged. Only here to be the base of `app`;
-  # scale 0 means it's built but never started on its own.
-  base:
-    image: papertrade-base
-    build:
-      context: .
-      dockerfile: Dockerfile
-    scale: 0
-
   app:
     image: papertrade-app
-    build:
+    build: &app-build
       context: .
-      additional_contexts:
-        base: service:base
-      dockerfile_inline: |
-        FROM base
-        RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
-            && rm -rf /var/lib/apt/lists/*
-        COPY ml/requirements.txt /app/ml/requirements.txt
-        RUN pip install --no-cache-dir -r /app/ml/requirements.txt
-        COPY ml/ /app/ml/
+      dockerfile: Dockerfile
     env_file:
       - path: .env
         required: false
@@ -35,4 +17,15 @@ services:
       - "8000:8000"
       - "3000:3000"
       - "3001:3001"
+    restart: unless-stopped
+
+  # The ML Model Lab dev page (ml/lab/), on the same image. It runs only its own
+  # server, so it doesn't start the backend, frontends or cloudflared tunnel.
+  lab:
+    image: papertrade-app
+    build: *app-build
+    command: ["uvicorn", "ml.lab.server:app", "--host", "0.0.0.0", "--port", "8100"]
+    working_dir: /app
+    ports:
+      - "8100:8100"
     restart: unless-stopped

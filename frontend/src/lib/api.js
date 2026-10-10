@@ -29,5 +29,7 @@ export const api = {
   leaderboard: (limit = 20) => request(`/leaderboard?${new URLSearchParams({ limit })}`),
   train: (payload) => request('/models/train', { method: 'POST', body: JSON.stringify(payload) }),
   predict: (modelId) => request(`/models/${encodeURIComponent(modelId)}/predict`),
+  overlay: (modelId) => request(`/models/${encodeURIComponent(modelId)}/overlay`),
+  history: (symbol, limit = 5000) => request(`/history/${encodeURIComponent(symbol)}?${new URLSearchParams({ limit })}`),
   news: (symbol, limit = 20) => request(`/news?${new URLSearchParams({ symbol, limit })}`),
 }

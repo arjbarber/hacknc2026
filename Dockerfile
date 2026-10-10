@@ -13,7 +13,8 @@ RUN npm run build
 
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y curl supervisor ca-certificates && \
+# libgomp1: OpenMP runtime that LightGBM (ml/) needs on Linux.
+RUN apt-get update && apt-get install -y curl supervisor ca-certificates libgomp1 && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
     curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg -o /usr/share/keyrings/cloudflare-main.gpg && \
@@ -23,8 +24,10 @@ RUN apt-get update && apt-get install -y curl supervisor ca-certificates && \
 
 WORKDIR /app
 
+# The backend imports ml/ for the model routes, so both requirement files are installed.
 COPY backend/requirements.txt ./backend/
-RUN pip install --no-cache-dir -r backend/requirements.txt
+COPY ml/requirements.txt ./ml/
+RUN pip install --no-cache-dir -r backend/requirements.txt -r ml/requirements.txt
 
 COPY backend/ ./backend/
 COPY ingest/ ./ingest/

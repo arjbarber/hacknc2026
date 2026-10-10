@@ -10,15 +10,24 @@ HOUR_MS = 3_600_000
 
 
 def random_walk_candles(n_hours=5000, start_price=150.0, hourly_vol=0.01,
-                        start_ts_ms=1_700_000_000_000, seed=0):
+                        start_ts_ms=1_700_000_000_000, seed=0, autocorr=0.0):
     """Return a DataFrame with columns ts, open, high, low, close, volume.
 
     Each candle is built from 60 one-minute log-return steps so that high/low
     are real path extremes, not noise added after the fact.
+
+    autocorr > 0 plants momentum: each hour drifts by autocorr * the previous
+    hour's return. That gives the models a real pattern to find (a positive
+    control). Keep it at 0 for the leak check.
     """
     rng = np.random.default_rng(seed)
     steps = 60
     minute_rets = rng.normal(0.0, hourly_vol / np.sqrt(steps), size=(n_hours, steps))
+    if autocorr:
+        prev = 0.0
+        for h in range(n_hours):
+            minute_rets[h] += autocorr * prev / steps
+            prev = minute_rets[h].sum()
     log_path = np.log(start_price) + np.cumsum(minute_rets.ravel())
     prices = np.exp(log_path).reshape(n_hours, steps)
 

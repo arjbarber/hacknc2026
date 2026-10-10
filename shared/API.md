@@ -28,25 +28,50 @@ GET /leaderboard?limit=20
 -> [{"rank":1,"name":"alice","is_bot":false,"equity":104200.1,"pnl_pct":4.2}]
 
 ## Models
+Models train on real hourly candles: Coinbase for crypto, Yahoo for stocks and forex
+(no API keys). If that fetch fails, synthetic candles are used and data_source says so.
+
+GET /history/{symbol}?limit=2000        (max 5000; the candles the models train on)
+-> {"symbol":"SOL","interval":"1h","source":"coinbase",
+    "candles":[{"ts":1760000000000,"o":148.1,"h":148.5,"l":147.9,"c":148.3,"v":1200}]}
+source: coinbase | yahoo | synthetic
+
 POST /models/train
 body: {"symbol":"SOL","model_type":"lightgbm",
        "hyperparams":{"n_estimators":200,"max_depth":4,"learning_rate":0.05,
-                      "lookback":30,"horizon":5,"train_split":0.8}}
--> {"model_id":"m_42","metrics":{"accuracy":0.53,"precision":0.54},
-    "backtest":{"equity_curve":[{"ts":1760000000000,"equity":100000}],"sharpe":0.4,"max_drawdown":0.08},
-    "train_seconds":3.1}
+                      "lookback":30,"horizon":5,"start_ts":1785000000000}}
+-> {"model_id":"m_42","symbol":"SOL","interval":"1h","data_source":"coinbase",
+    "start_ts":1785000000000,"trained_through_ts":1791660000000,"threshold":0.55,
+    "metrics":{"accuracy":0.53,"precision":0.54,"baseline_always_up":0.52,"n_train":3967,"n_test":993},
+    "backtest":{"equity_curve":[{"ts":1760000000000,"equity":100000}],"sharpe":0.4,"max_drawdown":0.08,
+                "total_return":-0.02,"n_trades":120,"exposure":0.6},
+    "predictions":[{"ts":1760000000000,"p_up":0.57}],
+    "train_seconds":0.3}
 model_type: logreg | random_forest | lightgbm   ("ridge" still works as an old alias for logreg)
 hyperparams by model_type (all optional; defaults shown):
   logreg:         C=1.0   (inverse regularization strength: smaller = simpler model)
   random_forest:  n_estimators=200, max_depth=4
   lightgbm:       n_estimators=200, max_depth=4, learning_rate=0.05
-  every model:    lookback=30, horizon=5, train_split=0.8, threshold=0.55, fee_bps=10
+  every model:    lookback=30, horizon=5, threshold=0.55, fee_bps=10,
+                  start_ts (when the model starts trading; it trains on candles before it)
+                  or train_split=0.8 if start_ts is not given
 lookback and horizon are counted in candles, not hours. Stocks and forex skip nights and
 weekends, so a 5-candle horizon can span a weekend. Label the UI sliders "candles".
+start_ts (response) = first candle the model trades. predictions = P(up) made at each
+candle's close from start_ts on. Errors: 400 bad_request (e.g. start too early/late),
+404 unknown_symbol.
 
-GET /models/{model_id}/predict
+GET /models/{model_id}/predict           (newest closed candle)
 -> {"model_id":"m_42","symbol":"SOL","direction":"up","confidence":0.61,
     "horizon_candles":5,"ts":1760000000000}
+
+GET /models/{model_id}/overlay           (for drawing the model on a price chart)
+-> {"model_id":"m_42","symbol":"SOL","start_ts":1785000000000,"trained_through_ts":1791660000000,
+    "threshold":0.55,"horizon_candles":5,"predictions":[{"ts":...,"p_up":0.57}],
+    "backtest":{...same shape as /models/train}}
+Applies the model from start_ts to the newest candle, so it keeps going on candles that
+arrive after training (after trained_through_ts = never seen in training).
+Trained models live in memory: they are lost when the backend restarts (404 not_found).
 
 ## News
 GET /news?symbol=SOL&limit=20

@@ -26,11 +26,13 @@ def _macd(close, fast=12, slow=26, signal=9):
     return macd / close, (macd - sig) / close
 
 
-def build_features(candles, lookback=30, horizon=5):
+def build_features(candles, lookback=30, horizon=5, require_label=True):
     """Return (X, y, ts, fwd_ret) with rows aligned and NaNs dropped.
 
     lookback sets the volatility window and caps which return lags are used.
-    The last `horizon` rows are dropped because their label isn't known yet.
+    The last `horizon` rows are dropped because their label isn't known yet,
+    unless require_label=False (for predicting on the newest candles); then y
+    and fwd_ret are NaN on those rows.
     """
     close = candles["close"].astype(float)
     log_close = np.log(close)
@@ -52,22 +54,22 @@ def build_features(candles, lookback=30, horizon=5):
     # Return of the candle after t, used by the backtest (never a feature).
     fwd_ret = close.shift(-1) / close - 1
 
-    keep = f.notna().all(axis=1) & y.notna()
+    keep = f.notna().all(axis=1)
+    if require_label:
+        keep &= y.notna()
     # Rows must be consecutive (warm-up cut from the front, unlabeled rows from the back)
     # because time_split purges `horizon` rows by position.
     kept = np.flatnonzero(keep.to_numpy())
     if len(kept) and kept[-1] - kept[0] + 1 != len(kept):
         raise ValueError("features have NaNs mid-series; time_split's purge would be wrong")
+    y = y[keep].reset_index(drop=True)
     return (f[keep].reset_index(drop=True),
-            y[keep].astype(int).reset_index(drop=True),
+            y.astype(int) if require_label else y,
             candles["ts"][keep].reset_index(drop=True),
             fwd_ret[keep].reset_index(drop=True))
 
 
 def latest_features(candles, lookback=30):
     """Feature row for the most recent candle (it has no label yet), for live predictions."""
-    X, *_ = build_features(pd.concat([candles, candles.iloc[[-1]]], ignore_index=True),
-                           lookback=lookback, horizon=1)
-    # Appending a copy of the last candle gives that real last row a label, so
-    # build_features keeps it. Only the features are used, never that label.
+    X, *_ = build_features(candles, lookback=lookback, require_label=False)
     return X.iloc[[-1]]

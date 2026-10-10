@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model Lab</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f4; --panel: #ffffff; --ink: #1d2320; --muted: #66706a; --line: #e3e6e1;
+    --accent: #2f6f5e; --accent-ink: #ffffff; --up: #2f8a5b; --down: #c0503c; --warn: #b07a1e;
+    --strategy: #2f6f5e; --hold: #9aa39d; --shade: rgba(120, 130, 125, .10);
+    --band-up: rgba(47, 138, 91, .13); --band-down: rgba(192, 80, 60, .13);
+    --band-up-solid: rgba(47, 138, 91, .45); --band-down-solid: rgba(192, 80, 60, .45);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121614; --panel: #1a1f1c; --ink: #e6ebe7; --muted: #929c96; --line: #2b322e;
+            --accent: #5fb39b; --accent-ink: #0e1311; --up: #5cc08a; --down: #e27a66; --warn: #d9a54a;
+            --strategy: #5fb39b; --hold: #6b746f; --shade: rgba(150, 160, 155, .08);
+            --band-up: rgba(92, 192, 138, .14); --band-down: rgba(226, 122, 102, .14);
+            --band-up-solid: rgba(92, 192, 138, .5); --band-down-solid: rgba(226, 122, 102, .5); }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 16px 24px; border-bottom: 1px solid var(--line); display: flex;
+           align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; }
+  header span { color: var(--muted); font-size: 13px; }
+  main { display: grid; grid-template-columns: 300px 1fr; gap: 20px; padding: 20px 24px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; padding: 16px; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  aside .panel + .panel { margin-top: 14px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+       margin: 0 0 12px; font-weight: 600; }
+  .field { margin-bottom: 12px; }
+  .field label { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+  .field label output { font-variant-numeric: tabular-nums; color: var(--muted); }
+  .field small { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line);
+         border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: transparent; color: var(--ink); padding: 8px 4px;
+                font: inherit; font-size: 12.5px; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); }
+  .train { width: 100%; padding: 11px; border: 0; border-radius: 8px; background: var(--accent);
+           color: var(--accent-ink); font: inherit; font-weight: 600; cursor: pointer; margin-top: 14px; }
+  .train:disabled { opacity: .6; cursor: wait; }
+  .hidden { display: none; }
+  .verdict { padding: 12px 14px; border-radius: 8px; margin-bottom: 16px; border: 1px solid var(--line);
+             background: var(--panel); }
+  .verdict b { display: block; margin-bottom: 2px; }
+  .verdict.edge { border-color: var(--up); }
+  .verdict.noise { border-color: var(--warn); }
+  .verdict.error { border-color: var(--down); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px;
+           margin-bottom: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .card .k { color: var(--muted); font-size: 12px; }
+  .card .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .card .s { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .pos { color: var(--up); } .neg { color: var(--down); }
+  .chart-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; margin-right: 5px;
+              vertical-align: middle; }
+  .chart { height: 300px; position: relative; }
+  .chart.tall { height: 440px; }
+  .legend i.swatch { width: 10px; height: 10px; border-radius: 2px; }
+  .train-shade { position: absolute; top: 0; bottom: 26px; left: 0; pointer-events: none; z-index: 2;
+                 background: var(--shade); border-right: 2px solid var(--accent); }
+  .train-shade span { position: absolute; top: 6px; right: 8px; font-size: 11px; color: var(--muted); }
+  .start-row { display: flex; gap: 12px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+  .start-row input { flex: 1; min-width: 200px; }
+  .start-row .when { font-size: 13px; font-variant-numeric: tabular-nums; }
+  .start-row .when small { display: block; color: var(--muted); font-size: 11.5px; }
+  section .panel + .panel { margin-top: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; }
+  .table-wrap { overflow-x: auto; }
+  .empty { color: var(--muted); padding: 24px 0; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Model Lab</h1>
+  <span>Dev page for the ML pipeline · fake data · not the real frontend</span>
+</header>
+
+<main>
+  <aside>
+    <div class="panel">
+      <h2>Data</h2>
+      <div class="field">
+        <label for="autocorr">Planted momentum <output id="autocorr-out"></output></label>
+        <input type="range" id="autocorr" min="0" max="0.5" step="0.05" value="0">
+        <small>0 = pure random walk (nothing to learn). Higher plants a real pattern.</small>
+      </div>
+      <div class="field">
+        <label for="n_hours">History <output id="n_hours-out"></output></label>
+        <input type="range" id="n_hours" min="2000" max="20000" step="1000" value="5000">
+      </div>
+      <div class="field">
+        <label for="seed">Seed <output id="seed-out"></output></label>
+        <input type="range" id="seed" min="0" max="20" step="1" value="0">
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Model</h2>
+      <div class="seg" role="group" aria-label="Model type">
+        <button type="button" data-model="logreg" aria-pressed="true">Logistic</button>
+        <button type="button" data-model="random_forest" aria-pressed="false">Forest</button>
+        <button type="button" data-model="lightgbm" aria-pressed="false">LightGBM</button>
+      </div>
+      <div style="height:12px"></div>
+      <div class="field" data-for="logreg">
+        <label for="C">C (regularization) <output id="C-out"></output></label>
+        <input type="range" id="C" min="-3" max="2" step="0.25" value="0">
+        <small>Smaller = simpler model.</small>
+      </div>
+      <div class="field hidden" data-for="random_forest lightgbm">
+        <label for="n_estimators">Trees <output id="n_estimators-out"></output></label>
+        <input type="range" id="n_estimators" min="10" max="500" step="10" value="200">
+      </div>
+      <div class="field hidden" data-for="random_forest lightgbm">
+        <label for="max_depth">Max depth <output id="max_depth-out"></output></label>
+        <input type="range" id="max_depth" min="1" max="10" step="1" value="4">
+      </div>
+      <div class="field hidden" data-for="lightgbm">
+        <label for="learning_rate">Learning rate <output id="learning_rate-out"></output></label>
+        <input type="range" id="learning_rate" min="0.005" max="0.3" step="0.005" value="0.05">
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Shared</h2>
+      <div class="field">
+        <label for="lookback">Lookback <output id="lookback-out"></output></label>
+        <input type="range" id="lookback" min="5" max="120" step="1" value="30">
+      </div>
+      <div class="field">
+        <label for="horizon">Horizon <output id="horizon-out"></output></label>
+        <input type="range" id="horizon" min="1" max="24" step="1" value="5">
+      </div>
+      <div class="field">
+        <label for="threshold">Trade threshold <output id="threshold-out"></output></label>
+        <input type="range" id="threshold" min="0.5" max="0.7" step="0.01" value="0.55">
+        <small>Only trade when the model is at least this confident.</small>
+      </div>
+      <div class="field">
+        <label for="fee_bps">Fee <output id="fee_bps-out"></output></label>
+        <input type="range" id="fee_bps" min="0" max="50" step="1" value="10">
+      </div>
+      <button class="train" id="train">Train</button>
+    </div>
+  </aside>
+
+  <section>
+    <div class="verdict" id="verdict"><b>Not trained yet</b>Pick settings and press Train.</div>
+
+    <div class="cards">
+      <div class="card"><div class="k">Accuracy</div><div class="v" id="m-acc">–</div><div class="s" id="m-acc-s">&nbsp;</div></div>
+      <div class="card"><div class="k">Precision</div><div class="v" id="m-prec">–</div><div class="s">when it says "up"</div></div>
+      <div class="card"><div class="k">Sharpe</div><div class="v" id="m-sharpe">–</div><div class="s">annualized, after fees</div></div>
+      <div class="card"><div class="k">Return</div><div class="v" id="m-ret">–</div><div class="s" id="m-ret-s">&nbsp;</div></div>
+      <div class="card"><div class="k">Max drawdown</div><div class="v" id="m-dd">–</div><div class="s" id="m-trades">&nbsp;</div></div>
+      <div class="card"><div class="k">Prediction now</div><div class="v" id="m-pred">–</div><div class="s" id="m-pred-s">&nbsp;</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="chart-head">
+        <h2>SOL · model overlay</h2>
+        <div class="legend">
+          <span><i style="background:var(--strategy)"></i>Model (your money if you followed it)</span>
+          <span><i class="swatch" style="background:var(--band-up-solid)"></i>Long</span>
+          <span><i class="swatch" style="background:var(--band-down-solid)"></i>Short</span>
+        </div>
+      </div>
+      <div class="chart tall" id="chart"><div class="train-shade" id="shade"><span>trains on this</span></div></div>
+      <div class="start-row">
+        <input type="range" id="start" min="0" max="1" step="1" value="0" aria-label="Model start time">
+        <div class="when"><span id="start-date">–</span><small id="start-detail">&nbsp;</small></div>
+      </div>
+      <div class="field"><small>Drag the slider or click the chart to choose when the model starts. It learns from everything before that point, then trades from there on. Shading shows the position it holds on each candle; clear means it sat out.</small></div>
+    </div>
+
+    <div class="panel">
+      <h2>Run history</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Model</th><th>Settings</th><th>Momentum</th><th>Acc</th>
+                     <th>vs baseline</th><th>Sharpe</th><th>Return</th><th>Time</th></tr></thead>
+          <tbody id="history"><tr><td colspan="9" class="empty">No runs yet</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const pct = (x, d = 1) => (x * 100).toFixed(d) + '%';
+const candles = (n) => `${n} candle${n == 1 ? '' : 's'}`;
+const signed = (x, d = 1) => (x >= 0 ? '+' : '') + (x * 100).toFixed(d) + ' pts';
+let modelType = 'logreg';
+let runs = 0;
+
+// Slider labels. C is on a log scale: the slider holds log10(C).
+const fmt = {
+  autocorr: (v) => v == 0 ? 'none' : v,
+  n_hours: (v) => Number(v).toLocaleString() + ' candles',
+  seed: (v) => v,
+  C: (v) => Number((10 ** v).toPrecision(2)),
+  n_estimators: (v) => v, max_depth: (v) => v, learning_rate: (v) => v,
+  lookback: (v) => candles(v), horizon: (v) => candles(v),
+  threshold: (v) => v, fee_bps: (v) => v + ' bps',
+};
+for (const id of Object.keys(fmt)) {
+  const el = $(id), out = $(id + '-out');
+  const sync = () => (out.textContent = fmt[id](el.value));
+  el.addEventListener('input', sync);
+  sync();
+}
+
+document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => {
+  modelType = b.dataset.model;
+  document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-pressed', x === b));
+  document.querySelectorAll('[data-for]').forEach((f) =>
+    f.classList.toggle('hidden', !f.dataset.for.split(' ').includes(modelType)));
+}));
+
+// One chart: price candles, with the model drawn on top from the start onward.
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const chart = LightweightCharts.createChart($('chart'), {
+  autoSize: true,
+  layout: { background: { color: 'transparent' }, textColor: css('--muted'), fontSize: 11 },
+  grid: { vertLines: { color: css('--line') }, horzLines: { color: css('--line') } },
+  rightPriceScale: { borderColor: css('--line') },
+  // Small minBarSpacing so thousands of candles fit; otherwise only the most recent ones show.
+  timeScale: { borderColor: css('--line'), timeVisible: true, minBarSpacing: 0.01 },
+});
+// Position bands go first so they sit behind the candles. Full height on their own 0..1 scale.
+const bands = chart.addHistogramSeries({
+  priceScaleId: 'bands', priceLineVisible: false, lastValueVisible: false,
+  autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 1 } }),
+});
+chart.priceScale('bands').applyOptions({ scaleMargins: { top: 0, bottom: 0 }, visible: false });
+const candleSeries = chart.addCandlestickSeries({
+  upColor: css('--up'), downColor: css('--down'), borderVisible: false,
+  wickUpColor: css('--up'), wickDownColor: css('--down'),
+});
+const modelLine = chart.addLineSeries({ color: css('--strategy'), lineWidth: 2, priceLineVisible: false,
+                                        title: 'Model' });
+
+function dataParams() {
+  return { autocorr: +$('autocorr').value, n_hours: +$('n_hours').value, seed: +$('seed').value };
+}
+
+function hyperparams() {
+  const hp = {
+    lookback: +$('lookback').value, horizon: +$('horizon').value, start_ts: startTime() * 1000,
+    threshold: +$('threshold').value, fee_bps: +$('fee_bps').value,
+  };
+  if (modelType === 'logreg') hp.C = Number((10 ** $('C').value).toPrecision(2));
+  else {
+    hp.n_estimators = +$('n_estimators').value;
+    hp.max_depth = +$('max_depth').value;
+    if (modelType === 'lightgbm') hp.learning_rate = +$('learning_rate').value;
+  }
+  return hp;
+}
+
+// Start time: an index into the loaded candles. The slider keeps clear of both
+// ends; the backend still enforces its own minimums and explains any refusal.
+let times = [], closes = [], trained = false;
+const startTime = () => times[+$('start').value];
+// UTC, to match the chart's time axis.
+const fmtDate = (sec) => new Date(sec * 1000).toLocaleString(undefined,
+  { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) + ' UTC';
+
+function drawStart() {
+  if (!times.length) return;
+  const i = +$('start').value, t = times[i];
+  $('start-date').textContent = 'Starts ' + fmtDate(t);
+  $('start-detail').textContent =
+    `learns from ${i.toLocaleString()} candles · trades ${(times.length - i).toLocaleString()} candles`;
+  candleSeries.setMarkers([{ time: t, position: 'aboveBar', color: css('--accent'), shape: 'arrowDown', text: 'Start' }]);
+  const x = chart.timeScale().timeToCoordinate(t);
+  const shade = $('shade');
+  shade.style.display = x === null ? 'none' : 'block';
+  if (x !== null) shade.style.width = Math.max(0, x) + 'px';
+}
+
+function clearOverlay() {
+  bands.setData([]);
+  modelLine.setData([]);
+}
+
+function setStartIndex(i) {
+  const el = $('start');
+  el.value = Math.min(+el.max, Math.max(+el.min, i));
+  drawStart();
+}
+
+async function loadPrices() {
+  const d = dataParams();
+  const keep = times.length ? +$('start').value / times.length : 0.8;   // keep the same relative spot
+  const q = new URLSearchParams({ limit: d.n_hours, ...d });
+  const rows = await (await fetch(`/prices/SOL/candles?${q}`)).json();
+  times = rows.map((r) => r.ts / 1000);
+  closes = rows.map((r) => r.c);
+  candleSeries.setData(rows.map((r) => ({ time: r.ts / 1000, open: r.o, high: r.h, low: r.l, close: r.c })));
+  clearOverlay();
+  const el = $('start');
+  el.min = Math.ceil(times.length * 0.1);
+  el.max = Math.floor(times.length * 0.97);
+  chart.timeScale().fitContent();
+  setStartIndex(Math.round(keep * times.length));
+  if (trained) trainModel();
+}
+
+// Moving the start retrains right away (training takes well under a second).
+const startChanged = () => { clearOverlay(); if (trained) trainModel(); };
+$('start').addEventListener('input', () => { drawStart(); clearOverlay(); });
+$('start').addEventListener('change', startChanged);
+chart.subscribeClick((p) => {
+  if (p.time === undefined) return;
+  const i = times.findIndex((t) => t >= p.time);
+  if (i >= 0) { setStartIndex(i); startChanged(); }
+});
+chart.timeScale().subscribeVisibleLogicalRangeChange(drawStart);
+new ResizeObserver(drawStart).observe($('chart'));
+
+function setVerdict(kind, title, body) {
+  const v = $('verdict');
+  v.className = 'verdict ' + kind;
+  v.innerHTML = `<b>${title}</b>${body}`;
+}
+
+async function trainModel() {
+  const btn = $('train');
+  btn.disabled = true; btn.textContent = 'Training…';
+  const hp = hyperparams(), data = dataParams();
+  try {
+    const res = await fetch('/models/train', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol: 'SOL', model_type: modelType, hyperparams: hp, data }),
+    });
+    const out = await res.json();
+    if (!res.ok) throw new Error(out.detail?.message || res.statusText);
+    const pred = await (await fetch(`/models/${out.model_id}/predict`)).json();
+    trained = true;
+    render(out, pred, hp, data);
+  } catch (e) {
+    clearOverlay();
+    setVerdict('error', 'Training failed', e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Train';
+  }
+}
+
+// The overlay, from the start onward:
+//  - bands: the position the model holds over each candle (long, short, or out)
+//  - model line: your money if you followed it, in price units so it starts on the
+//    start candle's close and compares directly with the price (which is buy & hold)
+function drawOverlay(out, hp) {
+  const index = new Map(times.map((t, i) => [t, i]));
+  const up = css('--band-up'), down = css('--band-down');
+  const bandAt = new Map(), modelAt = new Map();
+  for (const p of out.predictions) {
+    // The bet made at candle i's close plays out over candle i+1.
+    const color = p.p_up > hp.threshold ? up : p.p_up < 1 - hp.threshold ? down : 'transparent';
+    bandAt.set(times[index.get(p.ts / 1000) + 1], color);
+  }
+  const i0 = index.get(out.start_ts / 1000), p0 = closes[i0];
+  modelAt.set(times[i0], p0);
+  for (const e of out.backtest.equity_curve)
+    modelAt.set(times[index.get(e.ts / 1000) + 1], p0 * e.equity / 100000);
+  // Every series gets the same timestamps as the candles, with empty (whitespace)
+  // points before the start. Series with only part of the range make
+  // lightweight-charts misplace the time axis.
+  bands.setData(times.map((t) => bandAt.has(t) ? { time: t, value: 1, color: bandAt.get(t) } : { time: t }));
+  modelLine.setData(times.map((t) => modelAt.has(t) ? { time: t, value: modelAt.get(t) } : { time: t }));
+  const last = out.backtest.equity_curve.at(-1);
+  return closes[index.get(last.ts / 1000) + 1] / p0 - 1;   // buy & hold over the same span
+}
+
+function render(out, pred, hp, data) {
+  const m = out.metrics, bt = out.backtest;
+  // Compare against the better of "always up" and "always down".
+  const base = Math.max(m.baseline_always_up, 1 - m.baseline_always_up);
+  const edge = m.accuracy - base;
+  // Neighboring labels overlap when horizon > 1, so the effective sample is ~n_test / horizon.
+  const noise = 2 * Math.sqrt(0.25 / Math.max(1, m.n_test / hp.horizon));
+  const holdRet = drawOverlay(out, hp);
+
+  if (edge > noise && bt.sharpe > 0)
+    setVerdict('edge', 'Real edge, and it survives fees',
+      `Accuracy beats the baseline by ${signed(edge)}, outside the ±${(noise * 100).toFixed(1)} pt noise band.`);
+  else if (edge > noise)
+    setVerdict('noise', 'Real edge, but fees eat it',
+      `Accuracy beats the baseline by ${signed(edge)} (noise ±${(noise * 100).toFixed(1)} pts), yet the backtest loses money. Try a higher trade threshold or lower fee.`);
+  else
+    setVerdict('noise', 'No real edge',
+      `Accuracy vs baseline: ${signed(edge)}, inside the ±${(noise * 100).toFixed(1)} pt noise band (effective sample ≈ ${Math.round(m.n_test / hp.horizon).toLocaleString()} because labels overlap). On a pure random walk this is the expected result.`);
+
+  $('m-acc').textContent = pct(m.accuracy);
+  $('m-acc-s').innerHTML = `baseline ${pct(base)} · <span class="${edge > 0 ? 'pos' : 'neg'}">${signed(edge)}</span>`;
+  $('m-prec').textContent = pct(m.precision);
+  $('m-sharpe').textContent = bt.sharpe.toFixed(2);
+  $('m-sharpe').className = 'v ' + (bt.sharpe >= 0 ? 'pos' : 'neg');
+  $('m-ret').textContent = pct(bt.total_return);
+  $('m-ret').className = 'v ' + (bt.total_return >= 0 ? 'pos' : 'neg');
+  $('m-ret-s').textContent = `buy & hold ${pct(holdRet)}`;
+  $('m-dd').textContent = pct(bt.max_drawdown);
+  $('m-trades').textContent = `${bt.n_trades.toLocaleString()} trades · in market ${pct(bt.exposure, 0)}`;
+  $('m-pred').textContent = pred.direction === 'up' ? '▲ Up' : '▼ Down';
+  $('m-pred').className = 'v ' + (pred.direction === 'up' ? 'pos' : 'neg');
+  $('m-pred-s').textContent = `${pct(pred.confidence)} confident · next ${candles(pred.horizon_candles)}`;
+
+  const settings = modelType === 'logreg' ? `C=${hp.C}`
+    : `trees=${hp.n_estimators} depth=${hp.max_depth}` + (hp.learning_rate ? ` lr=${hp.learning_rate}` : '');
+  const row = document.createElement('tr');
+  row.innerHTML = `<td>${++runs}</td><td>${modelType}</td>
+    <td>${settings} · lb=${hp.lookback} h=${hp.horizon} thr=${hp.threshold} fee=${hp.fee_bps} · from ${fmtDate(out.start_ts / 1000)}</td>
+    <td>${data.autocorr || 'none'}</td><td>${pct(m.accuracy)}</td>
+    <td class="${edge > 0 ? 'pos' : 'neg'}">${signed(edge)}</td>
+    <td class="${bt.sharpe >= 0 ? 'pos' : 'neg'}">${bt.sharpe.toFixed(2)}</td>
+    <td class="${bt.total_return >= 0 ? 'pos' : 'neg'}">${pct(bt.total_return)}</td>
+    <td>${out.train_seconds}s</td>`;
+  const tbody = $('history');
+  if (runs === 1) tbody.innerHTML = '';
+  tbody.prepend(row);
+}
+
+$('train').addEventListener('click', trainModel);
+['autocorr', 'n_hours', 'seed'].forEach((id) => $(id).addEventListener('change', loadPrices));
+loadPrices();
+</script>
+</body>
+</html>

@@ -1,5 +1,6 @@
 import { api } from './lib/api.js'
-import { useEffect, useMemo, useState } from 'react'
+import ModelChart from './components/ModelChart.jsx'
+import { useEffect, useState } from 'react'
 import './Aerorithmetic.css'
 
 const assets = [
@@ -40,10 +41,23 @@ const navItems = [
   { id: 'portfolio', label: 'Portfolio', icon: '▤' },
 ]
 const modelOptions = [
-  { id: 'ridge', label: 'Ridge Regression' },
+  { id: 'logreg', label: 'Logistic Regression' },
   { id: 'random_forest', label: 'Random Forest' },
   { id: 'lightgbm', label: 'LightGBM' },
 ]
+const treeParams = [['n_estimators', 'Trees', 10, 1000, 10], ['max_depth', 'Max depth', 1, 20, 1]]
+const modelParams = {
+  logreg: [['C', 'Regularization C', 0.001, 100, 0.001]],
+  random_forest: treeParams,
+  lightgbm: [...treeParams, ['learning_rate', 'Learning rate', 0.001, 0.5, 0.001]],
+}
+const sharedParams = [['lookback', 'Lookback (candles)', 5, 200, 1], ['horizon', 'Forecast horizon (candles)', 1, 30, 1], ['threshold', 'Trade threshold', 0.5, 0.9, 0.01], ['fee_bps', 'Fee (bps)', 0, 100, 1]]
+// Enough decimals for sub-cent coins (BONK) and forex.
+const priceDigits = (candles, type) => {
+  const last = candles.at(-1)?.c
+  if (type === 'forex') return 4
+  return last < 0.01 ? 8 : last < 1 ? 4 : 2
+}
 const userId = (() => {
   try {
     const stored = localStorage.getItem('aerorithmetic-user-id')
@@ -75,60 +89,6 @@ function StatusMessage({ loading, error, empty, children }) {
   return children || null
 }
 
-function PriceChart({ candles, forecast, showForecast, digits }) {
-  const chart = useMemo(() => {
-    if (!candles.length) return null
-    const closes = candles.map((candle) => Number(candle.c))
-    const last = closes.at(-1)
-    const direction = forecast?.direction === 'down' ? -1 : 1
-    const confidence = Math.max(0, Math.min(1, Number(forecast?.confidence) || 0))
-    const horizon = Math.max(1, Math.min(20, Number(forecast?.horizon_candles) || 5))
-    const volatility = Math.max((Math.max(...closes) - Math.min(...closes)) / closes.length * 1.8, last * 0.0008)
-    const prediction = showForecast && forecast ? Array.from({ length: horizon + 1 }, (_, index) => ({
-      value: last + direction * volatility * confidence * index,
-      spread: volatility * (0.7 + index * (1.1 - confidence) * 0.3),
-    })) : []
-    const allValues = [...closes, ...prediction.flatMap((point) => [point.value - point.spread, point.value + point.spread])]
-    const min = Math.min(...allValues)
-    const max = Math.max(...allValues)
-    const padding = Math.max((max - min) * 0.16, Math.abs(max) * 0.0005)
-    const low = min - padding
-    const high = max + padding
-    const top = 18
-    const bottom = 232
-    const y = (value) => bottom - ((value - low) / (high - low || 1)) * (bottom - top)
-    const historyWidth = prediction.length ? 550 : 700
-    const history = closes.map((value, index) => ({ x: index / Math.max(1, closes.length - 1) * historyWidth, y: y(value) }))
-    const future = prediction.map((point, index) => ({
-      x: historyWidth + (index / Math.max(1, prediction.length - 1)) * (700 - historyWidth),
-      y: y(point.value),
-      upper: y(point.value + point.spread),
-      lower: y(point.value - point.spread),
-    }))
-    const path = (points) => points.map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ')
-    const band = future.length ? `${future.map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(1)} ${point.upper.toFixed(1)}`).join(' ')} ${future.slice().reverse().map((point) => `L${point.x.toFixed(1)} ${point.lower.toFixed(1)}`).join(' ')} Z` : ''
-    return { high, low, history: path(history), future: path(future), band, historyEnd: history.at(-1), futureEnd: future.at(-1) }
-  }, [candles, forecast, showForecast])
-
-  if (!chart) return <div className="chart-placeholder">Historical candles appear here when the API is available.</div>
-  return (
-    <div className="chart-frame">
-      <div className="chart-axis"><span>{money(chart.high, digits)}</span><span>{money((chart.high + chart.low) / 2, digits)}</span><span>{money(chart.low, digits)}</span></div>
-      <svg className="market-chart" viewBox="0 0 700 250" preserveAspectRatio="none" role="img" aria-label="Historical prices and directional forecast">
-        <defs><linearGradient id="history-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#38aebd" stopOpacity=".17" /><stop offset="1" stopColor="#38aebd" stopOpacity="0" /></linearGradient></defs>
-        <path className="chart-grid" d="M0 18H700 M0 125H700 M0 232H700" />
-        <path className="history-area" d={`${chart.history} L${chart.historyEnd.x} 232 L0 232 Z`} />
-        <path className="history-line" d={chart.history} />
-        {showForecast && chart.band && <path className="forecast-band" d={chart.band} />}
-        {showForecast && chart.future && <path className="forecast-line" d={chart.future} />}
-        {chart.historyEnd && <circle className="current-point" cx={chart.historyEnd.x} cy={chart.historyEnd.y} r="4" />}
-        {showForecast && chart.futureEnd && <circle className="forecast-point" cx={chart.futureEnd.x} cy={chart.futureEnd.y} r="4" />}
-      </svg>
-      <div className="chart-times"><span>Oldest candle</span><span>Most recent</span>{showForecast && <span className="forecast-time">Model horizon</span>}</div>
-    </div>
-  )
-}
-
 function App() {
   const [page, setPage] = useState('trade')
   const [selectedSymbol, setSelectedSymbol] = useState('SOL')
@@ -149,6 +109,9 @@ function App() {
   const [trainedModels, setTrainedModels] = useState([])
   const [selectedModelId, setSelectedModelId] = useState('')
   const [forecast, setForecast] = useState(null)
+  const [forecastOverlay, setForecastOverlay] = useState(null)
+  const [candleSource, setCandleSource] = useState('')
+  const [startTs, setStartTs] = useState(null)
   const [forecastLoading, setForecastLoading] = useState(false)
   const [leaderboard, setLeaderboard] = useState([])
   const [leaderboardLoading, setLeaderboardLoading] = useState(false)
@@ -157,11 +120,14 @@ function App() {
   const [newsLoading, setNewsLoading] = useState(false)
   const [newsError, setNewsError] = useState('')
   const [modelType, setModelType] = useState('lightgbm')
-  const [hyperparams, setHyperparams] = useState({ n_estimators: 200, max_depth: 4, learning_rate: 0.05, lookback: 30, horizon: 5, train_split: 0.8 })
+  const [hyperparams, setHyperparams] = useState({ C: 1, n_estimators: 200, max_depth: 4, learning_rate: 0.05, lookback: 30, horizon: 5, threshold: 0.55, fee_bps: 10 })
   const [training, setTraining] = useState(false)
   const [trainingError, setTrainingError] = useState('')
   const [trainingResult, setTrainingResult] = useState(null)
   const selectedAsset = assets.find((asset) => asset.symbol === selectedSymbol)
+  const digits = priceDigits(candles, selectedAsset?.type)
+  // Model Lab start: the user's pick, or 80% of the way through the history by default.
+  const labStartTs = startTs ?? (candles.length ? candles[Math.floor(candles.length * 0.8)].ts : null)
   const openPositions = portfolio?.positions || []
   const buyingPower = portfolio?.cash ?? null
   const holdingsValue = portfolio ? portfolio.equity - portfolio.cash : null
@@ -182,8 +148,8 @@ function App() {
       setMarketError('')
       setQuote(null)
       setCandles([])
-      Promise.all([api.price(selectedSymbol), api.candles(selectedSymbol, '1m', 120)]).then(([nextQuote, nextCandles]) => {
-        if (active) { setQuote(nextQuote); setCandles(nextCandles); setMarketError('') }
+      Promise.all([api.price(selectedSymbol), api.history(selectedSymbol, 5000)]).then(([nextQuote, history]) => {
+        if (active) { setQuote(nextQuote); setCandles(history.candles); setCandleSource(history.source); setMarketError('') }
       }).catch((error) => { if (active) setMarketError(error.message) }).finally(() => { if (active) setMarketLoading(false) })
     }, 0)
     return () => { active = false; clearTimeout(requestTimer) }
@@ -220,16 +186,18 @@ function App() {
     let active = true
     const requestTimer = setTimeout(() => {
       setForecastLoading(true)
-      api.predict(selectedModelId).then((result) => {
+      Promise.all([api.predict(selectedModelId), api.overlay(selectedModelId)]).then(([result, modelOverlay]) => {
         if (!active) return
         if (result.symbol !== selectedSymbol) {
           setForecast(null)
+          setForecastOverlay(null)
           setOrderMessage(`The selected model returned ${result.symbol}; choose a model trained for ${selectedSymbol}.`)
           return
         }
         setForecast(result)
+        setForecastOverlay(modelOverlay)
       })
-        .catch((error) => { if (active) { setForecast(null); setOrderMessage(error.message) } })
+        .catch((error) => { if (active) { setForecast(null); setForecastOverlay(null); setOrderMessage(error.message) } })
         .finally(() => { if (active) setForecastLoading(false) })
     }, 0)
     return () => { active = false; clearTimeout(requestTimer) }
@@ -264,13 +232,12 @@ function App() {
     finally { setOrderLoading(false) }
   }
 
-  async function trainModel(event) {
-    event.preventDefault()
+  async function trainModel(event, start = labStartTs) {
+    event?.preventDefault()
     setTraining(true)
     setTrainingError('')
-    setTrainingResult(null)
     try {
-      const result = await api.train({ symbol: selectedSymbol, model_type: modelType, hyperparams })
+      const result = await api.train({ symbol: selectedSymbol, model_type: modelType, hyperparams: { ...hyperparams, start_ts: start } })
       setTrainingResult(result)
       const model = { id: result.model_id, type: modelType, symbol: selectedSymbol, createdAt: Date.now() }
       setTrainedModels((current) => [model, ...current.filter((item) => item.id !== model.id)])
@@ -286,8 +253,17 @@ function App() {
     if (firstAsset) selectAsset(firstAsset.symbol)
   }
 
+  // Moving the start retrains right away if a model is already showing (training takes under a second).
+  function changeStart(ts) {
+    setStartTs(ts)
+    if (trainingResult) trainModel(null, ts)
+  }
+
   function selectAsset(symbol) {
     setSelectedSymbol(symbol)
+    setTrainingResult(null)
+    setStartTs(null)
+    setForecastOverlay(null)
     const asset = assets.find((item) => item.symbol === symbol)
     if (asset) setAssetClass(asset.type)
     setMarketLoading(true)
@@ -338,11 +314,11 @@ function App() {
                 <div className="symbol-line"><label className="symbol-select"><select aria-label="Select asset" value={selectedSymbol} onChange={(event) => selectAsset(event.target.value)}>{assets.filter((asset) => asset.type === assetClass).map((asset) => <option key={asset.symbol} value={asset.symbol}>{asset.symbol} · {asset.name}</option>)}</select><span>⌄</span></label><div className="live-quote"><strong>{quote ? money(quote.price, selectedAsset?.type === 'forex' ? 4 : 2) : '—'}</strong><span>{quote ? `Backend sample · ${formatTime(quote.ts)}` : 'API quote'}</span></div></div>
                 <StatusMessage loading={marketLoading} error={marketError} />
                 {!marketLoading && !marketError && <>
-                  <PriceChart candles={candles} forecast={forecast} showForecast={forecastEnabled && Boolean(forecast)} digits={selectedAsset?.type === 'forex' ? 4 : 2} />
-                  <div className="chart-legend"><span><i className="legend-history" /> Historical price <small>backend sample candles</small></span>{forecastEnabled && <span><i className="legend-forecast" /> AI directional estimate <small>not an API price target</small></span>}</div>
+                  <ModelChart candles={candles} overlay={forecastEnabled && forecast ? forecastOverlay : null} digits={digits} />
+                  <div className="chart-legend"><span><i className="legend-history" /> Hourly price <small>{candleSource === 'synthetic' ? 'synthetic data (history unavailable)' : `${candleSource} history`}</small></span>{forecastEnabled && forecastOverlay && <><span><i className="legend-model" /> Model <small>your money if you followed it</small></span><span><i className="legend-swatch" style={{ background: 'rgba(25, 135, 106, .35)' }} /> Long</span><span><i className="legend-swatch" style={{ background: 'rgba(201, 92, 81, .35)' }} /> Short</span></>}</div>
                 </>}
                 <div className="forecast-tools"><label className="toggle-control"><input type="checkbox" checked={forecastEnabled} onChange={(event) => { setForecastEnabled(event.target.checked); if (!event.target.checked) setForecast(null) }} /><span className="toggle-track" /><b>AI forecast</b></label><select aria-label="Select trained model" value={selectedModelId} onChange={(event) => { setSelectedModelId(event.target.value); setForecast(null); setForecastEnabled(Boolean(event.target.value)) }}><option value="">Select trained model</option>{trainedModels.filter((model) => model.symbol === selectedSymbol).map((model) => <option key={model.id} value={model.id}>{model.type.replace('_', ' ')} · {model.symbol} · {model.id}</option>)}</select><button className="text-action" type="button" onClick={() => setPage('lab')}>Train model <span>↗</span></button></div>
-                {forecastEnabled && <p className="forecast-note">{forecastLoading ? 'Loading prediction…' : forecast ? `Backend sample predicts ${forecast.direction} with ${(Number(forecast.confidence) * 100).toFixed(0)}% confidence over ${forecast.horizon_candles} candles. Orange path and shaded range are a directional visualization, not a backend price target.` : 'Train a model in Model Lab, then select it to request a directional forecast.'}</p>}
+                {forecastEnabled && <p className="forecast-note">{forecastLoading ? 'Loading prediction…' : forecast ? `Next ${forecast.horizon_candles} candles: ${forecast.direction} (${(Number(forecast.confidence) * 100).toFixed(0)}% confident). From its start, shading shows the position the model held on each candle and the orange line shows your money if you had followed it${forecastOverlay?.trained_through_ts < candles.at(-1)?.ts ? '; candles after "Live" were never seen in training' : ''}.` : 'Train a model in Model Lab, then select it to see how it trades on this chart.'}</p>}
               </section>
 
               <section className="glass-panel order-panel-main">
@@ -374,9 +350,14 @@ function App() {
 
           {page === 'lab' && <>
             <div className="page-title-row"><div><p className="kicker">TRAIN. TEST. COMPETE.</p><h1>Model Lab</h1><p className="page-subtitle">Configure a supported model and run it through the backend training endpoint.</p></div><span className="soft-badge">3 SUPPORTED MODELS</span></div>
-            <div className="lab-layout"><section className="glass-panel model-config"><div className="section-heading"><div><p className="kicker">CONFIGURATION</p><h2>Model parameters</h2></div></div><form onSubmit={trainModel}><label className="form-label" htmlFor="model-type">Model type</label><select id="model-type" value={modelType} onChange={(event) => setModelType(event.target.value)}>{modelOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select><label className="form-label" htmlFor="model-symbol">Training asset</label><select id="model-symbol" value={selectedSymbol} onChange={(event) => selectAsset(event.target.value)}>{assets.map((asset) => <option key={asset.symbol} value={asset.symbol}>{asset.symbol} · {asset.name}</option>)}</select><div className="parameter-grid">{[['n_estimators', 'Trees', 10, 1000, 10], ['max_depth', 'Max depth', 1, 20, 1], ['learning_rate', 'Learning rate', 0.001, 0.5, 0.001], ['lookback', 'Lookback candles', 5, 200, 1], ['horizon', 'Forecast horizon', 1, 30, 1], ['train_split', 'Training split', 0.5, 0.95, 0.05]].map(([key, label, min, max, step]) => <label className="parameter-field" key={key}><span>{label}</span><input type="number" min={min} max={max} step={step} value={hyperparams[key]} onChange={(event) => updateHyperparam(key, event.target.value)} /></label>)}</div><button className="primary-action" type="submit" disabled={training}>{training ? 'Training with backend…' : 'Train and backtest'}<span>✳</span></button>{trainingError && <p className="inline-error" role="alert">{trainingError}</p>}</form></section>
-              <section className="glass-panel results-panel"><div className="section-heading"><div><p className="kicker">BACKTEST OUTPUT</p><h2>Model results</h2></div>{trainingResult && <span className="soft-badge">API SAMPLE · {trainingResult.model_id}</span>}</div>{!trainingResult ? <div className="empty-results"><span className="result-glyph">⌁</span><p>Train a model to see backend-reported metrics and backtest results here.</p></div> : <><div className="metrics-grid"><div><span>Accuracy</span><strong>{percent(trainingResult.metrics?.accuracy, true)}</strong></div><div><span>Precision</span><strong>{percent(trainingResult.metrics?.precision, true)}</strong></div><div><span>Sharpe ratio</span><strong>{trainingResult.backtest?.sharpe ?? '—'}</strong></div><div><span>Max drawdown</span><strong>{percent(trainingResult.backtest?.max_drawdown, true)}</strong></div><div><span>Training time</span><strong>{trainingResult.train_seconds ? `${Number(trainingResult.train_seconds).toFixed(1)}s` : '—'}</strong></div></div><div className="result-equity"><span>Backtest equity curve</span>{trainingResult.backtest?.equity_curve?.length ? <div className="equity-points">{trainingResult.backtest.equity_curve.map((point, index) => <span key={`${point.ts}-${index}`} title={`${formatTime(point.ts)} · ${money(point.equity)}`} style={{ height: `${Math.min(100, Math.max(12, point.equity / Math.max(...trainingResult.backtest.equity_curve.map((item) => item.equity)) * 100))}%` }} />)}</div> : <p>No equity curve was returned by the backend.</p>}</div></>}</section>
+            <div className="lab-layout"><section className="glass-panel model-config"><div className="section-heading"><div><p className="kicker">CONFIGURATION</p><h2>Model parameters</h2></div></div><form onSubmit={trainModel}><label className="form-label" htmlFor="model-type">Model type</label><select id="model-type" value={modelType} onChange={(event) => setModelType(event.target.value)}>{modelOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select><label className="form-label" htmlFor="model-symbol">Training asset</label><select id="model-symbol" value={selectedSymbol} onChange={(event) => selectAsset(event.target.value)}>{assets.map((asset) => <option key={asset.symbol} value={asset.symbol}>{asset.symbol} · {asset.name}</option>)}</select><div className="parameter-grid">{[...modelParams[modelType], ...sharedParams].map(([key, label, min, max, step]) => <label className="parameter-field" key={key}><span>{label}</span><input type="number" min={min} max={max} step={step} value={hyperparams[key]} onChange={(event) => updateHyperparam(key, event.target.value)} /></label>)}</div><button className="primary-action" type="submit" disabled={training}>{training ? 'Training with backend…' : 'Train and backtest'}<span>✳</span></button>{trainingError && <p className="inline-error" role="alert">{trainingError}</p>}</form></section>
+              <section className="glass-panel results-panel"><div className="section-heading"><div><p className="kicker">BACKTEST OUTPUT</p><h2>Model results</h2></div>{trainingResult && <span className="soft-badge">{trainingResult.data_source?.toUpperCase()} DATA · {trainingResult.model_id}</span>}</div>{!trainingResult ? <div className="empty-results"><span className="result-glyph">⌁</span><p>Train a model to see backend-reported metrics and backtest results here.</p></div> : <><div className="metrics-grid"><div><span>Accuracy</span><strong>{percent(trainingResult.metrics?.accuracy, true)}</strong></div><div><span>Precision</span><strong>{percent(trainingResult.metrics?.precision, true)}</strong></div><div><span>Sharpe ratio</span><strong>{trainingResult.backtest?.sharpe ?? '—'}</strong></div><div><span>Max drawdown</span><strong>{percent(trainingResult.backtest?.max_drawdown, true)}</strong></div><div><span>Return</span><strong className={trainingResult.backtest?.total_return >= 0 ? 'positive' : 'negative'}>{percent(trainingResult.backtest?.total_return, true)}</strong></div><div><span>Baseline</span><strong>{percent(Math.max(trainingResult.metrics?.baseline_always_up, 1 - trainingResult.metrics?.baseline_always_up), true)}</strong></div><div><span>Training time</span><strong>{trainingResult.train_seconds ? `${Number(trainingResult.train_seconds).toFixed(1)}s` : '—'}</strong></div></div><p className="forecast-note">{trainingResult.metrics?.accuracy > Math.max(trainingResult.metrics?.baseline_always_up, 1 - trainingResult.metrics?.baseline_always_up) ? 'Accuracy beats always guessing the more common direction' : 'Accuracy does not beat always guessing the more common direction'}, on {trainingResult.metrics?.n_test?.toLocaleString()} candles the model never trained on. Neighboring forecasts overlap, so small edges are often noise.</p></>}</section>
             </div>
+            <section className="glass-panel">
+              <div className="section-heading"><div><p className="kicker">BACKTEST ON THE CHART</p><h2>When does the model start trading?</h2></div></div>
+              {candles.length ? <ModelChart candles={candles} overlay={trainingResult} startTs={labStartTs} onStartChange={changeStart} digits={digits} /> : <StatusMessage loading={marketLoading} error={marketError} />}
+              <div className="chart-legend"><span>Drag the slider or click the chart. The model learns from everything before the start, then trades from there on.</span>{trainingResult && <><span><i className="legend-model" /> Model</span><span><i className="legend-swatch" style={{ background: 'rgba(25, 135, 106, .35)' }} /> Long</span><span><i className="legend-swatch" style={{ background: 'rgba(201, 92, 81, .35)' }} /> Short</span></>}</div>
+            </section>
             <section className="glass-panel supported-models"><p className="kicker">AVAILABLE THROUGH THE API</p><div>{modelOptions.map((model) => <span key={model.id}>{model.label}<i>✓</i></span>)}</div></section>
           </>}
 
