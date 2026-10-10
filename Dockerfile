@@ -38,22 +38,34 @@ RUN printf "[supervisord]\n\
 nodaemon=true\n\
 \n\
 [program:backend]\n\
-command=uvicorn backend.main:app --host 0.0.0.0 --port 8000\n\
+command=uvicorn backend.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'\n\
 directory=/app\n\
 autostart=true\n\
 autorestart=true\n\
+stdout_logfile=/dev/stdout\n\
+stdout_logfile_maxbytes=0\n\
+stderr_logfile=/dev/stderr\n\
+stderr_logfile_maxbytes=0\n\
 \n\
 [program:frontend]\n\
 command=npm run preview -- --host 0.0.0.0 --port 3000\n\
 directory=/app/frontend\n\
 autostart=true\n\
 autorestart=true\n\
+stdout_logfile=/dev/stdout\n\
+stdout_logfile_maxbytes=0\n\
+stderr_logfile=/dev/stderr\n\
+stderr_logfile_maxbytes=0\n\
 \n\
 [program:aqua-exe]\n\
 command=npm run preview -- --host 0.0.0.0 --port 3001\n\
 directory=/app/ig-turing/aqua-exe\n\
 autostart=true\n\
 autorestart=true\n\
+stdout_logfile=/dev/stdout\n\
+stdout_logfile_maxbytes=0\n\
+stderr_logfile=/dev/stderr\n\
+stderr_logfile_maxbytes=0\n\
 \n\
 [program:cloudflared]\n\
 command=cloudflared tunnel --url http://127.0.0.1:8000\n\

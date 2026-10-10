@@ -16,6 +16,10 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 def get_connection():
     return psycopg.connect(DB_URL)
 
+@app.get("/")
+def read_root():
+    return {"message": "Backend is running!"}
+
 @app.get("/prices/{symbol}")
 def price(symbol: str):
     return {"symbol": symbol, "price": 148.32, "ts": 1760000000000}
