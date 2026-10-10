@@ -17,12 +17,12 @@ The frontend only ever talks to the backend. The rules for how they talk are in 
 
 | Folder | Owner | What's in it |
 |---|---|---|
-| `frontend/` | P3: NAME | Next.js app, all UI |
-| `backend/` | P1: NAME | FastAPI app, trade engine, database |
-| `ml/` | P2: NAME | Features, models, training, backtests |
-| `ingest/` | P4: NAME | Live price and news workers |
+| `frontend/` | P3: Vivi | Next.js app, all UI |
+| `backend/` | P1: Andre | FastAPI app, trade engine, database |
+| `ml/` | P2: Gabe | Features, models, training, backtests |
+| `ingest/` | P4: Zeren | Live price and news workers |
 | `shared/` | Everyone | `API.md` (the contract) and `assets.json` (the asset list) |
-| `docs/` | P4: NAME | DEV post draft, demo script |
+| `docs/` | P4: Zeren | DEV post draft, demo script |
 
 Only edit your own folder. If you need to change `shared/`, tell the group chat first.
 
@@ -78,10 +78,10 @@ Right now the backend returns **fake hardcoded data** that matches the contract.
 
 | Person | First goal |
 |---|---|
-| P1 | Connect Tiger Data, create `ticks`, `users`, `orders`, `positions` tables, replace the fake `/orders` and `/portfolio` with real logic |
-| P2 | Download 1-2 years of history, build features, train a first model that returns the `/models/train` shape |
-| P3 | Trade page, Leaderboard, and Model Lab screens built against the stub backend |
-| P4 | Live price ingest for crypto, stocks, and forex, writing `{symbol, price, ts}` to the database |
+| Andrew | Connect Tiger Data, create `ticks`, `users`, `orders`, `positions` tables, replace the fake `/orders` and `/portfolio` with real logic |
+| Gabe | Download 1-2 years of history, build features, train a first model that returns the `/models/train` shape |
+| Vivi | Trade page, Leaderboard, and Model Lab screens built against the stub backend |
+| Zeren | Live price ingest for crypto, stocks, and forex, writing `{symbol, price, ts}` to the database |
 
 ## Sponsor tracks we're using
 
