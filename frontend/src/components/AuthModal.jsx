@@ -98,7 +98,7 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }) {
 
         <div className="auth-modal-header">
           <div className="auth-brand-badge">
-            <span className="badge-dot" />
+            <span className="badge-dot" /> 
             <span>Tiger Data · TimescaleDB Auth</span>
           </div>
           <h2>{mode === 'login' ? 'Welcome Back' : 'Create Trader Account'}</h2>
