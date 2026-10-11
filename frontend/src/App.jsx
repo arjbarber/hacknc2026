@@ -1,6 +1,6 @@
 import { api } from './lib/api.js'
 import ModelChart from './components/ModelChart.jsx'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import './Aerorithmetic.css'
 
 const assets = [
@@ -52,6 +52,14 @@ const modelParams = {
   lightgbm: [...treeParams, ['learning_rate', 'Learning rate', 0.001, 0.5, 0.001]],
 }
 const sharedParams = [['lookback', 'Lookback (candles)', 5, 200, 1], ['horizon', 'Forecast horizon (candles)', 1, 30, 1], ['threshold', 'Trade threshold', 0.5, 0.9, 0.01], ['fee_bps', 'Fee (bps)', 0, 100, 1]]
+const chartRanges = [
+  { id: '1D', candles: 24 },
+  { id: '1W', candles: 24 * 7 },
+  { id: '1M', candles: 24 * 30 },
+  { id: '3M', candles: 24 * 90 },
+  { id: '1Y', candles: 24 * 365 },
+  { id: 'ALL', candles: Infinity },
+]
 // Enough decimals for sub-cent coins (BONK) and forex.
 const priceDigits = (candles, type) => {
   const last = candles.at(-1)?.c
@@ -91,7 +99,18 @@ function StatusMessage({ loading, error, empty, children }) {
 
 function App() {
   const [page, setPage] = useState('trade')
+  const [aeroCursorEnabled, setAeroCursorEnabled] = useState(() => {
+    try {
+      const savedPreference = localStorage.getItem('aerorithmetic-aero-cursor')
+      return savedPreference === null ? true : savedPreference === 'true'
+    } catch {
+      return true
+    }
+  })
+  const [cursorImageLoaded, setCursorImageLoaded] = useState(false)
+  const cursorImageRef = useRef(null)
   const [selectedSymbol, setSelectedSymbol] = useState('SOL')
+  const [chartRange, setChartRange] = useState('1D')
   const [assetClass, setAssetClass] = useState('crypto')
   const [side, setSide] = useState('buy')
   const [quantity, setQuantity] = useState('1')
@@ -132,6 +151,54 @@ function App() {
   const buyingPower = portfolio?.cash ?? null
   const holdingsValue = portfolio ? portfolio.equity - portfolio.cash : null
   const newsSentiment = news.length ? news.reduce((sum, item) => sum + Number(item.sentiment || 0), 0) / news.length : null
+  const chartCandleLimit = chartRanges.find((range) => range.id === chartRange)?.candles ?? Infinity
+  const displayedCandles = Number.isFinite(chartCandleLimit) ? candles.slice(-chartCandleLimit) : candles
+
+  useEffect(() => {
+    const root = document.documentElement
+    const cursorImage = cursorImageRef.current
+    root.classList.remove('aero-custom-cursor-active')
+    if (cursorImage) cursorImage.style.visibility = 'hidden'
+
+    if (!aeroCursorEnabled || !cursorImageLoaded || !window.matchMedia('(hover: hover) and (pointer: fine)').matches) return undefined
+
+    function hideCustomCursor() {
+      root.classList.remove('aero-custom-cursor-active')
+      if (cursorImageRef.current) cursorImageRef.current.style.visibility = 'hidden'
+    }
+
+    function moveCustomCursor(event) {
+      if (event.pointerType !== 'mouse') {
+        hideCustomCursor()
+        return
+      }
+
+      if (event.target instanceof Element && event.target.closest('input:not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea, [contenteditable="true"]')) {
+        hideCustomCursor()
+        return
+      }
+
+      const image = cursorImageRef.current
+      if (!image || !cursorImageLoaded) return
+      image.style.transform = `translate3d(${event.clientX - 6}px, ${event.clientY - 2}px, 0)`
+      image.style.visibility = 'visible'
+      root.classList.add('aero-custom-cursor-active')
+    }
+
+    function handlePointerOut(event) {
+      if (!event.relatedTarget) hideCustomCursor()
+    }
+
+    document.addEventListener('pointermove', moveCustomCursor, { passive: true })
+    document.addEventListener('pointerout', handlePointerOut)
+    window.addEventListener('blur', hideCustomCursor)
+    return () => {
+      document.removeEventListener('pointermove', moveCustomCursor)
+      document.removeEventListener('pointerout', handlePointerOut)
+      window.removeEventListener('blur', hideCustomCursor)
+      hideCustomCursor()
+    }
+  }, [aeroCursorEnabled, cursorImageLoaded])
 
   useEffect(() => {
     let active = true
@@ -289,7 +356,27 @@ function App() {
         <nav aria-label="Main navigation">
           {navItems.map((item) => <button className={`nav-item ${page === item.id ? 'nav-active' : ''}`} key={item.id} type="button" onClick={() => setPage(item.id)}><span className="nav-icon">{item.icon}</span><span>{item.label}</span>{page === item.id && <i />}</button>)}
         </nav>
-        <div className="nav-bottom"><span className="api-led" /><span>API connection</span><strong className={portfolioError || marketError ? 'api-offline' : ''}>{portfolioError || marketError ? 'Check' : 'Ready'}</strong></div>
+        <div className="nav-bottom">
+          <div className="api-status"><span className="api-led" /><span>API connection</span><strong className={portfolioError || marketError ? 'api-offline' : ''}>{portfolioError || marketError ? 'Check' : 'Ready'}</strong></div>
+          <button
+            className="cursor-toggle"
+            type="button"
+            aria-pressed={aeroCursorEnabled}
+            onClick={() => {
+              const enabled = !aeroCursorEnabled
+              if (!enabled) document.documentElement.classList.remove('aero-custom-cursor-active')
+              if (cursorImageRef.current) cursorImageRef.current.style.visibility = 'hidden'
+              setAeroCursorEnabled(enabled)
+              try {
+                localStorage.setItem('aerorithmetic-aero-cursor', String(enabled))
+              } catch {
+                // Cursor preference remains available for this session.
+              }
+            }}
+          >
+            <span>Aero Cursor</span><span className={`cursor-switch ${aeroCursorEnabled ? 'switch-on' : ''}`} aria-hidden="true"><i /></span><strong>{aeroCursorEnabled ? 'ON' : 'OFF'}</strong>
+          </button>
+        </div>
       </aside>
 
       <main className="main-shell">
@@ -311,10 +398,14 @@ function App() {
             <div className="trade-layout">
               <section className="glass-panel chart-panel-main">
                 <div className="section-heading"><div><p className="kicker">MARKET OVERVIEW</p><h2>Price action</h2></div><div className="class-switch" aria-label="Asset class">{['stock', 'crypto', 'forex'].map((kind) => <button className={assetClass === kind ? 'class-selected' : ''} key={kind} type="button" onClick={() => changeAssetClass(kind)}>{kind === 'stock' ? 'Stocks' : kind === 'crypto' ? 'Crypto' : 'Forex'}</button>)}</div></div>
-                <div className="symbol-line"><label className="symbol-select"><select aria-label="Select asset" value={selectedSymbol} onChange={(event) => selectAsset(event.target.value)}>{assets.filter((asset) => asset.type === assetClass).map((asset) => <option key={asset.symbol} value={asset.symbol}>{asset.symbol} · {asset.name}</option>)}</select><span>⌄</span></label><div className="live-quote"><strong>{quote ? money(quote.price, selectedAsset?.type === 'forex' ? 4 : 2) : '—'}</strong><span>{quote ? `Backend sample · ${formatTime(quote.ts)}` : 'API quote'}</span></div></div>
+                <div className="symbol-line">
+                  <label className="symbol-select"><i aria-hidden="true">{selectedSymbol.slice(0, 1)}</i><select aria-label="Select asset" value={selectedSymbol} onChange={(event) => selectAsset(event.target.value)}>{assets.filter((asset) => asset.type === assetClass).map((asset) => <option key={asset.symbol} value={asset.symbol}>{asset.symbol} · {asset.name}</option>)}</select><span>⌄</span></label>
+                  <div className="live-quote"><strong>{quote ? money(quote.price, selectedAsset?.type === 'forex' ? 4 : 2) : '—'}</strong><span>{quote ? `Backend sample · ${formatTime(quote.ts)}` : 'API quote'}</span></div>
+                  <div className="chart-ranges" aria-label="Chart range">{chartRanges.map((range) => <button className={chartRange === range.id ? 'range-active' : ''} key={range.id} type="button" onClick={() => setChartRange(range.id)}>{range.id}</button>)}</div>
+                </div>
                 <StatusMessage loading={marketLoading} error={marketError} />
                 {!marketLoading && !marketError && <>
-                  <ModelChart candles={candles} overlay={forecastEnabled && forecast ? forecastOverlay : null} digits={digits} />
+                  <ModelChart candles={displayedCandles} overlay={forecastEnabled && forecast ? forecastOverlay : null} digits={digits} />
                   <div className="chart-legend"><span><i className="legend-history" /> Hourly price <small>{candleSource === 'synthetic' ? 'synthetic data (history unavailable)' : `${candleSource} history`}</small></span>{forecastEnabled && forecastOverlay && <><span><i className="legend-model" /> Model <small>your money if you followed it</small></span><span><i className="legend-swatch" style={{ background: 'rgba(25, 135, 106, .35)' }} /> Long</span><span><i className="legend-swatch" style={{ background: 'rgba(201, 92, 81, .35)' }} /> Short</span></>}</div>
                 </>}
                 <div className="forecast-tools"><label className="toggle-control"><input type="checkbox" checked={forecastEnabled} onChange={(event) => { setForecastEnabled(event.target.checked); if (!event.target.checked) setForecast(null) }} /><span className="toggle-track" /><b>AI forecast</b></label><select aria-label="Select trained model" value={selectedModelId} onChange={(event) => { setSelectedModelId(event.target.value); setForecast(null); setForecastEnabled(Boolean(event.target.value)) }}><option value="">Select trained model</option>{trainedModels.filter((model) => model.symbol === selectedSymbol).map((model) => <option key={model.id} value={model.id}>{model.type.replace('_', ' ')} · {model.symbol} · {model.id}</option>)}</select><button className="text-action" type="button" onClick={() => setPage('lab')}>Train model <span>↗</span></button></div>
@@ -375,6 +466,16 @@ function App() {
           <footer className="page-footer"><span>AERORITHMETIC <b>·</b> MAKE CENTS OF THE FUTURE.</span><span>Practice only. Not investment advice.</span></footer>
         </div>
       </main>
+      <img
+        ref={cursorImageRef}
+        className="aero-cursor-image"
+        src="/images/cursor-transparent.png"
+        alt=""
+        aria-hidden="true"
+        draggable="false"
+        onLoad={() => setCursorImageLoaded(true)}
+        onError={() => setCursorImageLoaded(false)}
+      />
     </div>
   )
 }
