@@ -1,11 +1,15 @@
-# Server deployment: backend API, price feeds, news feed, and the frontend.
+# Server deployment. By default this runs ONLY the backend:
 #
-#   cp deploy/.env.example deploy/.env      # set PUBLIC_API_URL (and ports if needed)
 #   docker compose -f deploy/docker-compose.yml up -d --build
 #
+# Optional extras, only if this server should also run them (profiles):
+#   --profile feeds      live crypto/stock/forex prices -> ticks table
+#   --profile news       Finnhub + Gemini headlines -> news table
+#   --profile frontend   the web app (needs PUBLIC_API_URL in deploy/.env)
+#   e.g. docker compose -f deploy/docker-compose.yml --profile feeds --profile news up -d --build
+#
 # Secrets come from the repo-root .env (mounted read-only, never baked into images).
-# Ports default to 8080 (backend) and 3000 (frontend) so they don't collide with
-# anything already on 5000 / 8000.
+# BACKEND_PORT defaults to 8080 so it doesn't collide with anything already on 8000.
 name: papertrade
 
 x-backend-image: &backend
@@ -13,9 +17,12 @@ x-backend-image: &backend
   volumes:
     - ../.env:/app/.env:ro
   restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
 
 services:
-  # Only this service builds the image; feeds and news reuse it.
+  # Only this service builds the image; the optional feeds reuse it.
   backend:
     <<: *backend
     build:
@@ -23,32 +30,28 @@ services:
       dockerfile: deploy/Dockerfile.backend
     ports:
       - "${BACKEND_PORT:-8080}:8000"
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=5)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
-  # Live prices for crypto, stocks and forex -> ticks table.
   feeds:
     <<: *backend
+    profiles: ["feeds"]
     pull_policy: never
     depends_on: [backend]
     command: ["python", "ingest/run_all.py"]
 
-  # Finnhub headlines scored by Gemini -> news table.
   news:
     <<: *backend
+    profiles: ["news"]
     pull_policy: never
     depends_on: [backend]
     command: ["python", "ingest/news_feed.py"]
 
   frontend:
+    profiles: ["frontend"]
     build:
       context: ..
       dockerfile: deploy/Dockerfile.frontend
       args:
-        VITE_API_URL: ${PUBLIC_API_URL:?Set PUBLIC_API_URL in deploy/.env (the backend address browsers use)}
+        VITE_API_URL: ${PUBLIC_API_URL:-}
     image: papertrade-frontend
     ports:
       - "${FRONTEND_PORT:-3000}:80"

@@ -394,6 +394,29 @@ function App() {
     setQuantity(String(Math.floor(buyingPower / quote.price * 1e6) / 1e6))
   }
 
+  // Called when the account's cash goes down (a buy) or up (a sell). amount is always positive.
+  // eslint-disable-next-line no-unused-vars -- remove once this has code
+  function onCashDecrease(amount, cashBefore, cashAfter) {
+  }
+
+  // eslint-disable-next-line no-unused-vars -- remove once this has code
+  function onCashIncrease(amount, cashBefore, cashAfter) {
+  }
+
+  // Watch the cash balance and call the hooks above when it changes. Only balances from the
+  // same account are compared, so switching accounts (e.g. signing in) doesn't count as a change.
+  const prevCash = useRef({ userId: null, cash: null })
+  useEffect(() => {
+    const cash = portfolio?.cash
+    const userId = portfolio?.user_id
+    if (cash == null) return
+    const prev = prevCash.current
+    prevCash.current = { userId, cash }
+    if (prev.userId !== userId || prev.cash == null || cash === prev.cash) return
+    if (cash < prev.cash) onCashDecrease(prev.cash - cash, prev.cash, cash)
+    else onCashIncrease(cash - prev.cash, prev.cash, cash)
+  }, [portfolio?.cash, portfolio?.user_id])
+
   async function placeOrder(event) {
     event.preventDefault()
     const amount = Number(quantity)
