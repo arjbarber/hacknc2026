@@ -151,7 +151,7 @@ def roundup_toggle(body: RoundupBody):
     return {"enabled": body.enabled, "symbol": body.symbol}
 
 def _do_sweep(user_id):
-    from backend.main import order  # lazy import avoids a circular import
+    from backend.main import order, latest_price  # lazy import avoids a circular import
     with _db() as c:
         account_id, _, symbol = _get_link(c, user_id)
         swept = _swept_ids(c, user_id)
@@ -160,12 +160,10 @@ def _do_sweep(user_id):
     if total < MIN_SWEEP:
         return {"swept": False, "reason": f"pending round-ups ${total} below ${MIN_SWEEP} minimum",
                 "pending_total": total}
-    with _db() as c:
-        row = c.execute("SELECT price FROM ticks WHERE symbol=%s AND source IN ('live','replay') "
-                        "ORDER BY ts DESC LIMIT 1", (symbol,)).fetchone()
-    if not row:
+    quote = latest_price(symbol)
+    if not quote:
         raise HTTPException(409, {"error": "no_price", "message": f"No price for {symbol}"})
-    price = row[0]
+    price = quote[0]
     qty = round(total / price, 8)
     try:
         res = order({"user_id": user_id, "symbol": symbol, "side": "buy", "qty": qty})
@@ -196,9 +194,10 @@ def demo_purchase(body: DemoPurchaseBody):
     with nessie_errors():
         if not _merchant_id:
             merchants = nessie.list_merchants()
-            if not merchants:
-                raise HTTPException(502, {"error": "no_merchants", "message": "Nessie returned no merchants"})
-            _merchant_id = merchants[0]["_id"]
+            if merchants:
+                _merchant_id = merchants[0]["_id"]
+            else:
+                _merchant_id = nessie.create_merchant("PaperTrade Cafe")["_id"]
         p = nessie.create_purchase(account_id, _merchant_id, round(body.amount, 2),
                                    date.today().isoformat(), body.description)
     out = {"purchase_id": p.get("_id"), "amount": round(body.amount, 2),

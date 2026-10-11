@@ -33,6 +33,9 @@ app.include_router(auth_router)
 # come from the ML package, trained on real hourly history.
 app.include_router(ml_router)
 
+from backend.nessie_router import router as nessie_router
+app.include_router(nessie_router)
+
 def get_connection():
     return psycopg.connect(DB_URL)
 

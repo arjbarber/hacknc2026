@@ -4,12 +4,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BASE = "https://api.nessieisreal.com"
-KEY = os.environ["NESSIE_API_KEY"]
+KEY = os.getenv("NESSIE_API_KEY")
 
 class NessieError(Exception):
     pass
 
 def _call(method, path, json=None):
+    if not KEY:
+        raise NessieError("NESSIE_API_KEY is not set")
     r = httpx.request(method, f"{BASE}{path}", params={"key": KEY}, json=json, timeout=15)
     if r.status_code >= 400:
         raise NessieError(f"{method} {path} -> {r.status_code} {r.text[:300]}")
@@ -39,6 +41,13 @@ def get_account(account_id):
 
 def list_merchants():
     return _call("GET", "/merchants")
+
+def create_merchant(name):
+    return _created(_call("POST", "/merchants", {
+        "name": name, "category": ["food"],
+        "address": {"street_number": "1", "street_name": "Franklin St",
+                    "city": "Chapel Hill", "state": "NC", "zip": "27514"},
+        "geocode": {"lat": 35.91, "lng": -79.05}}))
 
 def list_purchases(account_id):
     return _call("GET", f"/accounts/{account_id}/purchases")
