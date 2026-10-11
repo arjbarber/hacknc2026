@@ -222,6 +222,19 @@ class UpdatePasswordRequest(BaseModel):
     password: str = Field(..., min_length=6, description="New password (min 6 characters)")
 
 
+class GoogleIdTokenRequest(BaseModel):
+    id_token: str = Field(..., description="Google ID token (from Google One Tap or Google Sign-In SDK)")
+    nonce: Optional[str] = Field(None, description="Optional cryptographic nonce")
+
+
+class GoogleOAuthUrlRequest(BaseModel):
+    redirect_to: Optional[str] = Field(None, description="Frontend URL to redirect after Google OAuth authentication")
+
+
+class ExchangeCodeRequest(BaseModel):
+    auth_code: str = Field(..., description="OAuth code from Supabase redirect callback")
+
+
 # --- Auth Endpoints ---
 
 @router.post("/signup")
@@ -441,3 +454,133 @@ def update_password(body: UpdatePasswordRequest, user: Dict[str, Any] = Depends(
         raise HTTPException(status_code=getattr(e, "status", 400) or 400, detail=e.message)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Password update failed: {str(e)}")
+
+
+@router.get("/google/url")
+@router.post("/google/url")
+def get_google_oauth_url(redirect_to: Optional[str] = None, body: Optional[GoogleOAuthUrlRequest] = None):
+    """
+    Generate the Google OAuth sign-in URL.
+    The client can redirect the user to this URL to initiate Google Sign-In via Supabase.
+    """
+    client = get_supabase_client()
+    try:
+        target_redirect = (body.redirect_to if body and body.redirect_to else redirect_to) or os.getenv("NEXT_PUBLIC_API_URL") or "http://localhost:3000"
+        res = client.auth.sign_in_with_oauth({
+            "provider": "google",
+            "options": {
+                "redirect_to": target_redirect,
+            },
+        })
+        return {
+            "status": "success",
+            "provider": "google",
+            "url": res.url,
+        }
+    except AuthApiError as e:
+        raise HTTPException(status_code=getattr(e, "status", 400) or 400, detail=e.message)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate Google OAuth URL: {str(e)}")
+
+
+@router.post("/google")
+@router.post("/google/id-token")
+def sign_in_with_google_id_token(body: GoogleIdTokenRequest):
+    """
+    Sign in with a Google ID token (e.g. from Google One Tap or Google Sign-In web button).
+    Exchanges the token for a full Supabase session and synchronizes the user into the database.
+    """
+    client = get_supabase_client()
+    try:
+        credentials = {
+            "provider": "google",
+            "token": body.id_token,
+        }
+        if body.nonce:
+            credentials["nonce"] = body.nonce
+
+        res = client.auth.sign_in_with_id_token(credentials)
+        if not res or not res.user or not res.session:
+            raise HTTPException(status_code=401, detail="Google authentication failed")
+
+        user_id = str(res.user.id)
+        user_meta = res.user.user_metadata or {}
+        display_name = user_meta.get("name") or user_meta.get("full_name") or (res.user.email.split("@")[0] if res.user.email else user_id)
+        sync_user_to_db(user_id, res.user.email, display_name)
+
+        # Retrieve user cash balance if database is available
+        cash = 100000.0
+        db_url = os.getenv("TIGER_DATABASE_URL")
+        if db_url:
+            try:
+                with psycopg.connect(db_url) as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT cash FROM users WHERE id = %s", (user_id,))
+                        row = cur.fetchone()
+                        if row:
+                            cash = float(row[0])
+            except Exception:
+                pass
+
+        return {
+            "status": "success",
+            "user": {
+                "id": user_id,
+                "email": res.user.email,
+                "name": display_name,
+                "avatar_url": user_meta.get("avatar_url") or user_meta.get("picture"),
+                "cash": cash,
+            },
+            "session": {
+                "access_token": res.session.access_token,
+                "refresh_token": res.session.refresh_token,
+                "token_type": res.session.token_type,
+                "expires_in": res.session.expires_in,
+                "expires_at": res.session.expires_at,
+            },
+        }
+    except AuthApiError as e:
+        raise HTTPException(status_code=getattr(e, "status", 401) or 401, detail=e.message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Google login failed: {str(e)}")
+
+
+@router.post("/exchange-code")
+def exchange_code(body: ExchangeCodeRequest):
+    """
+    Exchange an OAuth authorization code from a Supabase redirect for a session.
+    """
+    client = get_supabase_client()
+    try:
+        res = client.auth.exchange_code_for_session({"auth_code": body.auth_code})
+        if not res or not res.user or not res.session:
+            raise HTTPException(status_code=401, detail="Failed to exchange authorization code")
+
+        user_id = str(res.user.id)
+        user_meta = res.user.user_metadata or {}
+        display_name = user_meta.get("name") or user_meta.get("full_name") or (res.user.email.split("@")[0] if res.user.email else user_id)
+        sync_user_to_db(user_id, res.user.email, display_name)
+
+        return {
+            "status": "success",
+            "user": {
+                "id": user_id,
+                "email": res.user.email,
+                "name": display_name,
+            },
+            "session": {
+                "access_token": res.session.access_token,
+                "refresh_token": res.session.refresh_token,
+                "token_type": res.session.token_type,
+                "expires_in": res.session.expires_in,
+                "expires_at": res.session.expires_at,
+            },
+        }
+    except AuthApiError as e:
+        raise HTTPException(status_code=getattr(e, "status", 400) or 400, detail=e.message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Code exchange failed: {str(e)}")
