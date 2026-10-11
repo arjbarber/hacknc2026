@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 
 LAGS = (1, 2, 3, 6, 12, 24)
+# Bump when features change: saved models built on other features get retrained.
+FEATURE_VERSION = "v1"
 
 
 def _rsi(close, period=14):

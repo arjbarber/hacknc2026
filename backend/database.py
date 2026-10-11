@@ -28,9 +28,12 @@ def init_db():
             CREATE TABLE IF NOT EXISTS ticks (
                 ts TIMESTAMPTZ NOT NULL,
                 symbol VARCHAR(20) NOT NULL,
-                price DOUBLE PRECISION NOT NULL
+                price DOUBLE PRECISION NOT NULL,
+                source VARCHAR(20)
             );
             """)
+            # The ingest feeds write a source column; older databases were created without it.
+            cur.execute("ALTER TABLE ticks ADD COLUMN IF NOT EXISTS source VARCHAR(20);")
             try:
                 cur.execute("SELECT create_hypertable('ticks', 'ts', if_not_exists => TRUE);")
             except psycopg.errors.Error as e:
@@ -105,11 +108,10 @@ def init_db():
             ON CONFLICT (id) DO NOTHING;
             """)
 
-            # Insert a sample tick so there is a current price for SOL
-            cur.execute("""
-            INSERT INTO ticks (ts, symbol, price) VALUES
-            (NOW(), 'SOL', 148.32)
-            """)
+            # Latest-price lookups filter by symbol and sort by time. transaction_per_chunk builds
+            # it one chunk at a time, so the first build doesn't block the live feeds' writes.
+            cur.execute("CREATE INDEX IF NOT EXISTS ticks_symbol_ts ON ticks (symbol, ts DESC) "
+                        "WITH (timescaledb.transaction_per_chunk);")
 
 if __name__ == "__main__":
     print("Initializing database...")

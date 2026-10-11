@@ -5,7 +5,9 @@ starting cash $100,000 | fractional qty OK | errors = {"error": "code", "message
 
 ## Prices
 GET /prices/{symbol}
--> {"symbol":"SOL","price":148.32,"ts":1760000000000}
+-> {"symbol":"SOL","price":148.32,"ts":1760000000000,"source":"live"}
+source: live (newest tick from the ingest feeds) | coinbase / yahoo (last hourly close, when there
+is no tick yet). 404 for symbols not in assets.json, 503 if no price exists at all.
 
 GET /prices/{symbol}/candles?interval=1m&limit=200
 -> [{"ts":1760000000000,"o":148.1,"h":148.5,"l":147.9,"c":148.3,"v":1200}]
@@ -16,7 +18,15 @@ WS /stream (server pushes)
 
 ## Orders
 POST /orders  body: {"user_id":"u_123","symbol":"SOL","side":"buy","qty":2.5}
--> {"order_id":"o_9","status":"filled","fill_price":148.32,"ts":1760000000000,"cash_after":99629.2}
+-> {"order_id":"o_9","status":"filled","symbol":"SOL","side":"buy","qty":2.5,
+    "fill_price":148.32,"ts":1760000000000,"cash_after":99629.2}
+Market orders fill at the same price GET /prices returns. 400 for: missing user_id, symbol
+not in assets.json, side not buy/sell, qty not > 0, insufficient funds/position (message says
+how much you have). The account is created with $100,000 on its first order.
+
+GET /orders/{user_id}?limit=50   (newest first)
+-> [{"order_id":"o_9","symbol":"SOL","side":"buy","qty":2.5,"fill_price":148.32,
+     "status":"filled","ts":1760000000000}]
 
 ## Portfolio
 GET /portfolio/{user_id}
@@ -71,9 +81,25 @@ GET /models/{model_id}/overlay           (for drawing the model on a price chart
     "backtest":{...same shape as /models/train}}
 Applies the model from start_ts to the newest candle, so it keeps going on candles that
 arrive after training (after trained_through_ts = never seen in training).
-Trained models live in memory: they are lost when the backend restarts (404 not_found).
+Unsaved models live in memory and are lost when the backend restarts (404 not_found).
+Saved models are reloaded from the database automatically by predict/overlay.
+
+POST /models/{model_id}/save   body: {"user_id":"u_123","name":"My SOL model"}
+-> {"model_id":"m_42","name":"My SOL model","symbol":"SOL","model_type":"lightgbm",
+    "hyperparams":{...},"start_ts":...,"trained_through_ts":...,"data_source":"coinbase",
+    "metrics":{...},"backtest":{...summary, no equity_curve},"equity_preview":[{"ts":...,"equity":...}],
+    "created_at":1760000000000}
+Saving again renames it. 403 if another account saved it, 404 if the model isn't in memory.
+
+GET /users/{user_id}/models    -> [same shape as save], newest first (also loads them into memory)
+DELETE /models/{model_id}?user_id=u_123   -> {"model_id":"m_42","deleted":true}
+503 storage_unavailable if the backend has no database.
 
 ## News
 GET /news?symbol=SOL&limit=20
 -> [{"headline":"...","source":"CryptoPanic","url":"...","ts":1760000000000,
      "symbol":"SOL","sentiment":0.6,"summary":"One-line summary"}]
+From the news table written by ingest/news_feed.py (Finnhub headlines scored by Gemini).
+Only scored headlines, newest first; [] until the news feed has run.
+symbol can also be MARKET (stories Gemini didn't tie to one asset) or ALL (everything);
+with ALL, &asset_class=crypto|stock|forex narrows it to that class.
