@@ -1,0 +1,22 @@
+# Backend + ML + ingest feeds only (no frontend build), so it fits small servers.
+# The same image runs the API, the price feeds and the news feed (see docker-compose.yml).
+FROM python:3.11-slim
+
+# libgomp1: OpenMP runtime that LightGBM (ml/) needs on Linux.
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY backend/requirements.txt backend/requirements.txt
+COPY ml/requirements.txt ml/requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements.txt -r ml/requirements.txt
+
+COPY backend/ backend/
+COPY ml/ ml/
+COPY ingest/ ingest/
+COPY shared/ shared/
+
+# .env is not baked in (.dockerignore); it's mounted at /app/.env at runtime.
+ENV PYTHONUNBUFFERED=1
+EXPOSE 8000
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]

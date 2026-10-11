@@ -6,7 +6,8 @@ starting cash $100,000 | fractional qty OK | errors = {"error": "code", "message
 ## Prices
 GET /prices/{symbol}
 -> {"symbol":"SOL","price":148.32,"ts":1760000000000,"source":"live"}
-source: live (newest tick from the ingest feeds) | coinbase / yahoo (last hourly close, when there
+source: live / replay (tick from the ingest feeds; replay = a closed market's last price) |
+coinbase-live / yahoo-live (straight from the exchange when no fresh tick) | coinbase / yahoo (last hourly close, when there
 is no tick yet). 404 for symbols not in assets.json, 503 if no price exists at all.
 
 GET /prices/{symbol}/candles?interval=1m&limit=200
