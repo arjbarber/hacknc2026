@@ -45,8 +45,7 @@
   z-index: 4;
 }
 .brand { display: grid; grid-template-columns: 35px 1fr; align-items: center; column-gap: 8px; padding: 5px 6px 27px; text-decoration: none; }
-.brand-glyph { position: relative; display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid rgba(116, 178, 200, .56); border-radius: 50%; background: linear-gradient(145deg, #fff 8%, #d9f5fb 47%, #a4d7e8 70%, #fff 100%); box-shadow: inset 0 1px 2px #fff, 0 2px 6px #5ba0b72b; color: #1d7690; font: 700 20px/1 Georgia, serif; }
-.brand-glyph > span { position: absolute; top: 1px; right: -3px; color: var(--orange); font: 700 12px/1 'Avenir Next', sans-serif; }
+.brand-glyph { display: block; width: 34px; height: 34px; object-fit: contain; }
 .brand-name { color: #1d4664; font: 700 17px/1.1 Georgia, serif; }
 .brand small { grid-column: 2; margin-top: 3px; color: #8299a6; font-size: 9px; }
 .nav-caption { margin: 5px 0 9px 12px; color: #9aafbb; font-size: 8px; font-weight: 700; letter-spacing: 1.15px; }
@@ -97,7 +96,7 @@
 
 .trade-layout { display: grid; grid-template-columns: minmax(0, 1.72fr) minmax(250px, .8fr); gap: 15px; align-items: start; }
 .chart-panel-main { grid-column: 1; }
-.order-panel-main { grid-column: 2; grid-row: 1 / span 2; }
+.order-panel-main { grid-column: 2; grid-row: 1; }
 .positions-panel { grid-column: 1; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 14px; }
 .section-heading .kicker { margin-bottom: 5px; }
@@ -458,6 +457,115 @@ tbody tr:last-child td { border-bottom: 0; }
   .side-nav { background: linear-gradient(155deg, rgba(235,247,255,.38), rgba(225,246,252,.24)); }
 }
 
+.fih-viewer {
+  position: relative;
+  display: flex;
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
+  justify-self: end;
+  flex-direction: column;
+  align-items: flex-end;
+  z-index: 12;
+  width: clamp(200px, 16vw, 240px);
+  overflow: visible;
+  background: transparent;
+}
+
+.fih-canvas {
+  width: 100%;
+  aspect-ratio: 1;
+  cursor: grab;
+  touch-action: none;
+}
+
+.fih-canvas:active {
+  cursor: grabbing;
+}
+
+.fih-canvas canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  background: transparent !important;
+}
+
+.fih-speech {
+  position: relative;
+  width: min(100%, 232px);
+  margin-bottom: -8px;
+  padding: 10px 38px 10px 12px;
+  border: 1px solid rgba(255, 255, 255, .92);
+  border-radius: 16px 16px 4px 16px;
+  background: linear-gradient(145deg, rgba(255,255,255,.76), rgba(214,244,252,.58));
+  box-shadow: inset 0 1px rgba(255,255,255,.96), 0 8px 22px rgba(38, 111, 145, .14);
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  backdrop-filter: blur(14px) saturate(1.15);
+  color: #315c73;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.fih-speech-play {
+  position: absolute;
+  z-index: 2;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  width: 24px;
+  aspect-ratio: 1;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, .88);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .66);
+  color: #31738a;
+  font-size: 8px;
+  cursor: pointer;
+}
+
+.fih-speech-play:disabled {
+  opacity: .38;
+  cursor: not-allowed;
+}
+
+.fih-speech::after {
+  position: absolute;
+  right: 13px;
+  bottom: -8px;
+  width: 15px;
+  height: 15px;
+  border-right: 1px solid rgba(255,255,255,.9);
+  border-bottom: 1px solid rgba(255,255,255,.9);
+  background: rgba(220, 246, 252, .72);
+  content: '';
+  transform: rotate(45deg);
+}
+
+.fih-speech p {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  animation: fih-message-in .38s ease both;
+}
+
+@keyframes fih-message-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 780px) {
+  .fih-viewer {
+    grid-column: 1;
+    grid-row: auto;
+    order: 3;
+    width: clamp(150px, 42vw, 190px);
+  }
+
+  .positions-panel { order: 4; }
+}
+
 .nav-bottom {
   display: grid;
   gap: 10px;
@@ -580,7 +688,7 @@ tbody tr:last-child td { border-bottom: 0; }
 @media (min-width: 1081px) {
   .side-nav { flex-basis: 236px; padding: 28px 17px 17px; }
   .brand { grid-template-columns: 39px 1fr; padding: 5px 7px 34px; }
-  .brand-glyph { width: 38px; height: 38px; font-size: 22px; }
+  .brand-glyph { width: 38px; height: 38px; }
   .brand-name { font-size: 19px; }
   .brand small { font-size: 9px; }
   .nav-caption { margin-top: 11px; margin-bottom: 11px; }
@@ -637,8 +745,8 @@ tbody tr:last-child td { border-bottom: 0; }
 @media (max-width: 780px) {
   .aero-app { display: block; padding-bottom: 58px; }
   .side-nav { position: sticky; top: 0; width: 100%; height: auto; padding: 9px 12px 0; border-right: 0; border-bottom: 1px solid rgba(117,174,201,.28); }
-  .brand { grid-template-columns: 28px 1fr; column-gap: 7px; padding: 0 4px 8px; }
-  .brand-glyph { width: 26px; height: 26px; font-size: 16px; }
+  .brand { grid-template-columns: 32px 1fr; column-gap: 7px; padding: 0 4px 8px; }
+  .brand-glyph { width: 32px; height: 32px; }
   .brand-name { font-size: 15px; }
   .brand small { font-size: 8px; }
   .nav-caption { display: none; }

@@ -1,6 +1,7 @@
 import { api } from './lib/api.js'
 import ModelChart from './components/ModelChart.jsx'
-import { useEffect, useRef, useState } from 'react'
+import FihViewer from './components/FihViewer.jsx'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import './Aerorithmetic.css'
 
 const assets = [
@@ -121,6 +122,13 @@ function App() {
   const [marketError, setMarketError] = useState('')
   const [orderLoading, setOrderLoading] = useState(false)
   const [orderMessage, setOrderMessage] = useState('')
+  const [fihMessage, setFihMessage] = useState('Exactly even; I was promised at least one dramatic bubble.')
+  const [fihSpeech, setFihSpeech] = useState('')
+  const fihRequestRef = useRef({ id: 0, controller: null })
+  const fihCacheRef = useRef(new Map())
+  const quantityInteractionRef = useRef(false)
+  const lastEquityRef = useRef(null)
+  const suppressEquityReactionRef = useRef(false)
   const [orders, setOrders] = useState([])
   const [ordersError, setOrdersError] = useState('')
   const [modelsError, setModelsError] = useState('')
@@ -160,6 +168,38 @@ function App() {
   const newsSentiment = news.length ? news.reduce((sum, item) => sum + Number(item.sentiment || 0), 0) / news.length : null
   const chartCandleLimit = chartRanges.find((range) => range.id === chartRange)?.candles ?? Infinity
   const displayedCandles = Number.isFinite(chartCandleLimit) ? candles.slice(-chartCandleLimit) : candles
+
+  const requestFihMessage = useCallback(async (context) => {
+    const cacheKey = JSON.stringify(context)
+    const cached = fihCacheRef.current.get(cacheKey)
+    if (cached) {
+      fihRequestRef.current.controller?.abort()
+      fihRequestRef.current.id += 1
+      setFihMessage(cached.message)
+      setFihSpeech(cached.speech)
+      return cached.message
+    }
+
+    fihRequestRef.current.controller?.abort()
+    const controller = new AbortController()
+    const requestId = fihRequestRef.current.id + 1
+    fihRequestRef.current = { id: requestId, controller }
+    try {
+      const response = await api.fihMessage(context, controller.signal)
+      if (requestId !== fihRequestRef.current.id) return null
+      const result = { message: response.message, speech: response.speech || '' }
+      fihCacheRef.current.set(cacheKey, result)
+      if (fihCacheRef.current.size > 64) fihCacheRef.current.delete(fihCacheRef.current.keys().next().value)
+      setFihMessage(result.message)
+      setFihSpeech(result.speech)
+      return result.message
+    } catch (error) {
+      if (error?.name === 'AbortError' || requestId !== fihRequestRef.current.id) return null
+      setFihMessage('Fih lost the cosmic signal, but your paper portfolio is still here.')
+      setFihSpeech('')
+      return null
+    }
+  }, [])
 
   useEffect(() => {
     const root = document.documentElement
@@ -216,6 +256,39 @@ function App() {
       .finally(() => { if (active) setPortfolioLoading(false) })
     return () => { active = false }
   }, [page])
+
+  useEffect(() => {
+    const equity = Number(portfolio?.equity)
+    if (!Number.isFinite(equity) || lastEquityRef.current === equity) return
+    lastEquityRef.current = equity
+    if (suppressEquityReactionRef.current) {
+      suppressEquityReactionRef.current = false
+      return
+    }
+    requestFihMessage({ kind: 'equity', equity })
+  }, [portfolio?.equity, requestFihMessage])
+
+  useEffect(() => {
+    if (page !== 'trade' || orderLoading || !quantityInteractionRef.current) return undefined
+    const amount = Number(quantity)
+    const price = Number(quote?.price)
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(price) || price <= 0) return undefined
+
+    const timer = window.setTimeout(() => {
+      requestFihMessage({
+        kind: 'preview',
+        symbol: selectedSymbol,
+        side,
+        quantity: amount,
+        estimated_value: amount * price,
+        buying_power: buyingPower,
+        equity: portfolio?.equity,
+      })
+    }, 1000)
+    return () => window.clearTimeout(timer)
+  }, [buyingPower, orderLoading, page, portfolio?.equity, quantity, quote?.price, requestFihMessage, selectedSymbol, side])
+
+  useEffect(() => () => fihRequestRef.current.controller?.abort(), [])
 
   // Saved models from the account, so they're back after a reload.
   useEffect(() => {
@@ -316,12 +389,14 @@ function App() {
       setPortfolio(account)
       setOrders(history)
       setOrdersError('')
+      return account
     } catch (error) { setPortfolioError(error.message) }
     finally { setPortfolioLoading(false) }
   }
 
   // Fill the quantity with everything you can afford (buy) or everything you hold (sell).
   function fillMax() {
+    quantityInteractionRef.current = true
     if (side === 'sell') { setQuantity(String(heldQty)); return }
     if (!quote || buyingPower === null) return
     setQuantity(String(Math.floor(buyingPower / quote.price * 1e6) / 1e6))
@@ -338,8 +413,28 @@ function App() {
     setOrderMessage('')
     try {
       const result = await api.order({ user_id: userId, symbol: selectedSymbol, side, qty: amount })
+      fihRequestRef.current.controller?.abort()
+      fihRequestRef.current = { id: fihRequestRef.current.id + 1, controller: null }
+      quantityInteractionRef.current = false
       setOrderMessage(`${side === 'buy' ? 'Bought' : 'Sold'} ${amount} ${selectedSymbol} at ${fmtPrice(result.fill_price)}.`)
-      await refreshPortfolio()
+      suppressEquityReactionRef.current = true
+      const updatedPortfolio = await refreshPortfolio()
+      if (updatedPortfolio) {
+        await requestFihMessage({
+          kind: 'order',
+          symbol: selectedSymbol,
+          side,
+          quantity: amount,
+          fill_price: result.fill_price,
+          estimated_value: amount * result.fill_price,
+          buying_power: updatedPortfolio.cash,
+          equity: updatedPortfolio.equity,
+        })
+      } else {
+        suppressEquityReactionRef.current = false
+        setFihMessage('Order landed, but Fih cannot see the updated portfolio through these bubbles.')
+        setFihSpeech('')
+      }
     } catch (error) { setOrderMessage(error.message) }
     finally { setOrderLoading(false) }
   }
@@ -430,7 +525,7 @@ function App() {
     <div className="aero-app">
       <aside className="side-nav">
         <a className="brand" href="#trade" onClick={(event) => { event.preventDefault(); setPage('trade') }} aria-label="Aerorithmetic home">
-          <span className="brand-glyph">a<span>+</span></span><span className="brand-name">aerorithmetic</span><small>Make cents of the future.</small>
+          <img className="brand-glyph" src="/images/logo.png" alt="" /><span className="brand-name">aerorithmetic</span><small>Make cents of the future.</small>
         </a>
         <div className="nav-caption">WORKSPACE</div>
         <nav aria-label="Main navigation">
@@ -494,10 +589,10 @@ function App() {
 
               <section className="glass-panel order-panel-main">
                 <div className="section-heading"><div><p className="kicker">PAPER ORDER</p><h2>Place a trade</h2></div><span className="market-order-label">MARKET</span></div>
-                <div className="order-switch"><button className={side === 'buy' ? 'buy-active' : ''} type="button" onClick={() => { setSide('buy'); setOrderMessage('') }}>Buy</button><button className={side === 'sell' ? 'sell-active' : ''} type="button" onClick={() => { setSide('sell'); setOrderMessage('') }}>Sell</button></div>
+                <div className="order-switch"><button className={side === 'buy' ? 'buy-active' : ''} type="button" onClick={() => { quantityInteractionRef.current = true; setSide('buy'); setOrderMessage('') }}>Buy</button><button className={side === 'sell' ? 'sell-active' : ''} type="button" onClick={() => { quantityInteractionRef.current = true; setSide('sell'); setOrderMessage('') }}>Sell</button></div>
                 <form className="order-form" onSubmit={placeOrder}>
                   <label htmlFor="order-qty">Quantity <span>fractional allowed</span></label>
-                  <input id="order-qty" type="number" min="0.000001" step="any" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+                  <input id="order-qty" type="number" min="0.000001" step="any" value={quantity} onChange={(event) => { quantityInteractionRef.current = true; setQuantity(event.target.value) }} />
                   <button className="text-action" type="button" onClick={fillMax} disabled={side === 'sell' ? !heldQty : !quote || buyingPower === null}>{side === 'buy' ? 'Max affordable' : 'Sell all'} <span>↗</span></button>
                   <div className="order-estimate"><span>You own</span><b>{heldQty.toLocaleString('en-US', { maximumFractionDigits: 6 })} {selectedSymbol}</b></div>
                   <div className="order-estimate"><span>Asset</span><b>{selectedSymbol}</b></div><div className="order-estimate"><span>Last price</span><b>{quote ? fmtPrice(quote.price) : '—'}</b></div><div className="order-estimate estimate-total"><span>Estimated total</span><b>{quote ? money(Number(quantity || 0) * quote.price) : '—'}</b></div>
@@ -512,6 +607,7 @@ function App() {
                   <div className="table-scroll"><table><thead><tr><th>Asset</th><th>Shares</th><th>Avg. cost</th><th>Market value</th><th>Unrealized P/L</th></tr></thead><tbody>{openPositions.map((position) => <tr key={position.symbol}><td><button className="table-asset" type="button" onClick={() => { selectAsset(position.symbol); setPage('trade') }}><span className="asset-token">{position.symbol.slice(0, 1)}</span><b>{position.symbol}</b></button></td><td>{Number(position.qty).toLocaleString('en-US')}</td><td>{fmtPrice(position.avg_price)}</td><td>{money(position.last_price * position.qty)}</td><td className={position.unrealized_pnl >= 0 ? 'positive' : 'negative'}>{position.unrealized_pnl >= 0 ? '+' : ''}{money(position.unrealized_pnl)}</td></tr>)}</tbody></table></div>
                 </StatusMessage>
               </section>
+              <FihViewer message={fihMessage} speech={fihSpeech} />
             </div>
           </>}
 

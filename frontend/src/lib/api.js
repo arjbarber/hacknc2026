@@ -10,8 +10,9 @@ async function request(path, options = {}) {
         ...options.headers,
       },
     })
-  } catch {
-    throw new Error(`Could not reach the API at ${API_BASE}. Check that the backend is running.`)
+  } catch (error) {
+    if (error?.name === 'AbortError') throw error
+    throw new Error(`Could not reach the API at ${API_BASE}. Check that the backend is running.`, { cause: error })
   }
 
   const data = await response.json().catch(() => null)
@@ -36,4 +37,5 @@ export const api = {
   deleteModel: (modelId, userId) => request(`/models/${encodeURIComponent(modelId)}?${new URLSearchParams({ user_id: userId })}`, { method: 'DELETE' }),
   history: (symbol, limit = 5000) => request(`/history/${encodeURIComponent(symbol)}?${new URLSearchParams({ limit })}`),
   news: (symbol, limit = 20) => request(`/news?${new URLSearchParams({ symbol, limit })}`),
+  fihMessage: (payload, signal) => request('/fih/message', { method: 'POST', body: JSON.stringify(payload), signal }),
 }

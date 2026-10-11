@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 
 from ml.api import router as ml_router
 from ml.history import get_candles, live_quote
+from backend.fih import router as fih_router
 
 try:
     from backend.auth import router as auth_router, get_current_user, get_optional_user
@@ -32,6 +33,7 @@ app.include_router(auth_router)
 # Model routes (/models/train, /models/{id}/predict, /models/{id}/overlay, /history/{symbol})
 # come from the ML package, trained on real hourly history.
 app.include_router(ml_router)
+app.include_router(fih_router)
 
 def get_connection():
     return psycopg.connect(DB_URL)
