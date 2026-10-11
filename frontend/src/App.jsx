@@ -82,8 +82,9 @@ const money = (value, digits = 2) => Number.isFinite(Number(value))
   : '—'
 // Prices need more decimals for sub-cent coins (BONK) and sub-dollar ones.
 const fmtPrice = (value) => money(value, Math.abs(value) < 0.01 ? 8 : Math.abs(value) < 1 ? 4 : 2)
-// Under 5 minutes old is live; older exchange quotes are a closed market's last trade.
-const quoteLabel = (quote) => Date.now() - quote.ts < 300000 ? 'Live price' : quote.source?.endsWith('live') ? 'Last trade (market closed)' : 'Last hourly close'
+// replay = the feeds re-sending a closed market's last price. Otherwise under 5 minutes old is live,
+// and older exchange quotes are a closed market's last trade.
+const quoteLabel = (quote) => quote.source === 'replay' ? 'Last trade (market closed)' : Date.now() - quote.ts < 300000 ? 'Live price' : quote.source?.endsWith('live') ? 'Last trade (market closed)' : 'Last hourly close'
 const modelLabel = (model) => model.name || `${model.type.replace('_', ' ')} · unsaved`
 const percent = (value, multiply = false) => Number.isFinite(Number(value)) ? `${(multiply ? value * 100 : value).toFixed(2)}%` : '—'
 const formatTime = (timestamp) => new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date(timestamp))
