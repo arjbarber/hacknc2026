@@ -15,18 +15,17 @@ load_dotenv()
 # We import supabase lazily or handle missing client gracefully
 try:
     from supabase import create_client, Client
+    from supabase.client import ClientOptions
     from supabase_auth.errors import AuthApiError, AuthError
 except ImportError:
     create_client = None
     Client = Any
+    ClientOptions = Any
     AuthApiError = Exception
     AuthError = Exception
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 security = HTTPBearer(auto_error=False)
-
-_supabase_client: Optional[Any] = None
-_supabase_admin_client: Optional[Any] = None
 
 
 def is_supabase_configured() -> bool:
@@ -41,37 +40,77 @@ def is_supabase_configured() -> bool:
     return True
 
 
-def get_supabase_client():
-    """Returns an initialized Supabase client using anon/public key."""
-    global _supabase_client
+def create_user_supabase_client(access_token: Optional[str] = None):
+    """
+    Creates a new, isolated Supabase client instance dedicated to a single request/client.
+    - persist_session=False prevents sessions from persisting in memory or leaking across requests.
+    - auto_refresh_token=False avoids background thread refreshing other users' tokens.
+    - If access_token is provided, the client headers and PostgREST client are explicitly scoped to that user.
+    """
     if not is_supabase_configured():
         raise HTTPException(
             status_code=503,
             detail="Supabase credentials are not configured. Please set SUPABASE_URL and SUPABASE_KEY in backend/.env",
         )
-    if _supabase_client is None:
-        url = os.getenv("SUPABASE_URL", "").strip()
-        key = (os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY") or "").strip()
-        _supabase_client = create_client(url, key)
-    return _supabase_client
+    url = os.getenv("SUPABASE_URL", "").strip()
+    key = (os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY") or "").strip()
+
+    headers: Dict[str, str] = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+
+    options = ClientOptions(
+        persist_session=False,
+        auto_refresh_token=False,
+        headers=headers,
+    )
+    client = create_client(url, key, options=options)
+    if access_token:
+        try:
+            client.postgrest.auth(access_token)
+        except Exception:
+            pass
+    return client
+
+
+def create_admin_supabase_client():
+    """
+    Creates a new, isolated Supabase admin client using the service role key.
+    Session persistence is disabled.
+    """
+    if not is_supabase_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase credentials are not configured. Please set SUPABASE_URL and SUPABASE_KEY in backend/.env",
+        )
+    url = os.getenv("SUPABASE_URL", "").strip()
+    admin_key = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
+    options = ClientOptions(persist_session=False, auto_refresh_token=False)
+    if admin_key and "your-supabase" not in admin_key:
+        return create_client(url, admin_key, options=options)
+    anon_key = (os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY") or "").strip()
+    return create_client(url, anon_key, options=options)
+
+
+def get_supabase_client(credentials: Optional[HTTPAuthorizationCredentials] = Security(security)):
+    """
+    FastAPI dependency / factory: creates a fresh, isolated Supabase client for each request.
+    If the caller supplied an Authorization Bearer token, the client is automatically
+    scoped to that user.
+    """
+    token = None
+    if isinstance(credentials, HTTPAuthorizationCredentials):
+        token = credentials.credentials
+    elif isinstance(credentials, str):
+        token = credentials
+    return create_user_supabase_client(access_token=token)
 
 
 def get_supabase_admin_client():
-    """Returns an initialized Supabase admin client using service_role key, or falls back to public client."""
-    global _supabase_admin_client
-    if not is_supabase_configured():
-        raise HTTPException(
-            status_code=503,
-            detail="Supabase credentials are not configured. Please set SUPABASE_URL and SUPABASE_KEY in backend/.env",
-        )
-    if _supabase_admin_client is None:
-        url = os.getenv("SUPABASE_URL", "").strip()
-        admin_key = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
-        if admin_key and "your-supabase" not in admin_key:
-            _supabase_admin_client = create_client(url, admin_key)
-        else:
-            _supabase_admin_client = get_supabase_client()
-    return _supabase_admin_client
+    """
+    Creates a fresh, isolated Supabase admin client instance.
+    """
+    return create_admin_supabase_client()
 
 
 def sync_user_to_db(user_id: str, email: Optional[str] = None, name: Optional[str] = None) -> None:
@@ -121,7 +160,7 @@ def verify_token(token: str) -> Dict[str, Any]:
 
     # 1. Try Supabase Auth API
     if is_supabase_configured():
-        client = get_supabase_client()
+        client = create_user_supabase_client(access_token=token)
         try:
             res = client.auth.get_user(token)
             if res and res.user:
@@ -242,9 +281,10 @@ class UpdateProfileRequest(BaseModel):
 # --- Auth Endpoints ---
 
 @router.post("/signup")
-def sign_up(body: SignUpRequest):
+def sign_up(body: SignUpRequest, client: Any = Depends(get_supabase_client)):
     """Register a new user in Supabase Auth and initialize user in database."""
-    client = get_supabase_client()
+    if client is None or not hasattr(client, "auth"):
+        client = get_supabase_client()
     try:
         options = {}
         if body.name:
@@ -294,9 +334,10 @@ def sign_up(body: SignUpRequest):
 
 
 @router.post("/login")
-def login(body: LoginRequest):
+def login(body: LoginRequest, client: Any = Depends(get_supabase_client)):
     """Authenticate a user with email and password via Supabase."""
-    client = get_supabase_client()
+    if client is None or not hasattr(client, "auth"):
+        client = get_supabase_client()
     try:
         res = client.auth.sign_in_with_password({
             "email": body.email,
@@ -349,13 +390,17 @@ def login(body: LoginRequest):
 
 
 @router.post("/logout")
-def logout(credentials: Optional[HTTPAuthorizationCredentials] = Security(security)):
+def logout(
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(security),
+    client: Any = Depends(get_supabase_client),
+):
     """Log out user from Supabase."""
     if not is_supabase_configured():
         return {"status": "success", "message": "Logged out"}
+    if client is None or not hasattr(client, "auth"):
+        client = get_supabase_client(credentials)
     try:
-        client = get_supabase_client()
-        if credentials and credentials.credentials:
+        if credentials and hasattr(credentials, "credentials") and credentials.credentials:
             client.auth.sign_out({"jwt": credentials.credentials})
         else:
             client.auth.sign_out()
@@ -365,9 +410,10 @@ def logout(credentials: Optional[HTTPAuthorizationCredentials] = Security(securi
 
 
 @router.post("/refresh")
-def refresh_session(body: RefreshTokenRequest):
+def refresh_session(body: RefreshTokenRequest, client: Any = Depends(get_supabase_client)):
     """Refresh an access token using a refresh token."""
-    client = get_supabase_client()
+    if client is None or not hasattr(client, "auth"):
+        client = get_supabase_client()
     try:
         res = client.auth.refresh_session(body.refresh_token)
         if not res or not res.session:
@@ -432,9 +478,10 @@ def get_me(user: Dict[str, Any] = Depends(get_current_user)):
 
 
 @router.post("/reset-password")
-def reset_password(body: ResetPasswordRequest):
+def reset_password(body: ResetPasswordRequest, client: Any = Depends(get_supabase_client)):
     """Send a password reset email to the user."""
-    client = get_supabase_client()
+    if client is None or not hasattr(client, "auth"):
+        client = get_supabase_client()
     try:
         options = {}
         if body.redirect_to:
@@ -448,10 +495,27 @@ def reset_password(body: ResetPasswordRequest):
 
 
 @router.post("/update-password")
-def update_password(body: UpdatePasswordRequest, user: Dict[str, Any] = Depends(get_current_user)):
+def update_password(
+    body: UpdatePasswordRequest,
+    user: Dict[str, Any] = Depends(get_current_user),
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(security),
+    client: Any = Depends(get_supabase_client),
+):
     """Update password for the currently logged-in user."""
-    client = get_supabase_client()
+    if client is None or not hasattr(client, "auth"):
+        client = get_supabase_client(credentials)
+    token = credentials.credentials if isinstance(credentials, HTTPAuthorizationCredentials) else None
     try:
+        admin_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+        if admin_key and "your-supabase" not in admin_key:
+            admin_client = get_supabase_admin_client()
+            admin_client.auth.admin.update_user_by_id(user["id"], {"password": body.password})
+            return {"status": "success", "message": "Password updated successfully"}
+
+        if token and hasattr(client.auth, "_request"):
+            client.auth._request("PUT", "user", body={"password": body.password}, jwt=token)
+            return {"status": "success", "message": "Password updated successfully"}
+
         client.auth.update_user({"password": body.password})
         return {"status": "success", "message": "Password updated successfully"}
     except AuthApiError as e:
@@ -461,7 +525,12 @@ def update_password(body: UpdatePasswordRequest, user: Dict[str, Any] = Depends(
 
 
 @router.put("/profile")
-def update_profile(body: UpdateProfileRequest, user: Dict[str, Any] = Depends(get_current_user)):
+def update_profile(
+    body: UpdateProfileRequest,
+    user: Dict[str, Any] = Depends(get_current_user),
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(security),
+    client: Any = Depends(get_supabase_client),
+):
     """Update user display name in Tiger Data users table and sync metadata."""
     user_id = user["id"]
     new_name = body.name.strip()
@@ -478,8 +547,18 @@ def update_profile(body: UpdateProfileRequest, user: Dict[str, Any] = Depends(ge
     # Also update Supabase metadata if client is available
     if is_supabase_configured():
         try:
-            client = get_supabase_client()
-            client.auth.update_user({"data": {"name": new_name}})
+            admin_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+            if admin_key and "your-supabase" not in admin_key:
+                admin_client = get_supabase_admin_client()
+                admin_client.auth.admin.update_user_by_id(user_id, {"user_metadata": {"name": new_name}})
+            else:
+                token = credentials.credentials if isinstance(credentials, HTTPAuthorizationCredentials) else None
+                if client is None or not hasattr(client, "auth"):
+                    client = get_supabase_client(credentials)
+                if token and hasattr(client.auth, "_request"):
+                    client.auth._request("PUT", "user", body={"data": {"name": new_name}}, jwt=token)
+                else:
+                    client.auth.update_user({"data": {"name": new_name}})
         except Exception:
             pass
 
@@ -489,12 +568,17 @@ def update_profile(body: UpdateProfileRequest, user: Dict[str, Any] = Depends(ge
 
 @router.get("/google/url")
 @router.post("/google/url")
-def get_google_oauth_url(redirect_to: Optional[str] = None, body: Optional[GoogleOAuthUrlRequest] = None):
+def get_google_oauth_url(
+    redirect_to: Optional[str] = None,
+    body: Optional[GoogleOAuthUrlRequest] = None,
+    client: Any = Depends(get_supabase_client),
+):
     """
     Generate the Google OAuth sign-in URL.
     The client can redirect the user to this URL to initiate Google Sign-In via Supabase.
     """
-    client = get_supabase_client()
+    if client is None or not hasattr(client, "auth"):
+        client = get_supabase_client()
     try:
         target_redirect = (body.redirect_to if body and body.redirect_to else redirect_to) or os.getenv("NEXT_PUBLIC_API_URL") or "http://localhost:3000"
         res = client.auth.sign_in_with_oauth({
@@ -516,12 +600,16 @@ def get_google_oauth_url(redirect_to: Optional[str] = None, body: Optional[Googl
 
 @router.post("/google")
 @router.post("/google/id-token")
-def sign_in_with_google_id_token(body: GoogleIdTokenRequest):
+def sign_in_with_google_id_token(
+    body: GoogleIdTokenRequest,
+    client: Any = Depends(get_supabase_client),
+):
     """
     Sign in with a Google ID token (e.g. from Google One Tap or Google Sign-In web button).
     Exchanges the token for a full Supabase session and synchronizes the user into the database.
     """
-    client = get_supabase_client()
+    if client is None or not hasattr(client, "auth"):
+        client = get_supabase_client()
     try:
         credentials = {
             "provider": "google",
@@ -579,11 +667,15 @@ def sign_in_with_google_id_token(body: GoogleIdTokenRequest):
 
 
 @router.post("/exchange-code")
-def exchange_code(body: ExchangeCodeRequest):
+def exchange_code(
+    body: ExchangeCodeRequest,
+    client: Any = Depends(get_supabase_client),
+):
     """
     Exchange an OAuth authorization code from a Supabase redirect for a session.
     """
-    client = get_supabase_client()
+    if client is None or not hasattr(client, "auth"):
+        client = get_supabase_client()
     try:
         res = client.auth.exchange_code_for_session({"auth_code": body.auth_code})
         if not res or not res.user or not res.session:
