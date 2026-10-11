@@ -60,6 +60,10 @@ def init_db():
             );
             """)
 
+            # Leverage: how much of each position is borrowed, and each order's leverage.
+            # ADD COLUMN ... DEFAULT is instant on existing tables (no rewrite).
+            cur.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS leverage DOUBLE PRECISION NOT NULL DEFAULT 1;")
+
             # Create Positions table
             cur.execute("""
             CREATE TABLE IF NOT EXISTS positions (
@@ -67,9 +71,12 @@ def init_db():
                 symbol VARCHAR(20) NOT NULL,
                 qty DOUBLE PRECISION NOT NULL,
                 avg_price DOUBLE PRECISION NOT NULL,
+                borrowed DOUBLE PRECISION NOT NULL DEFAULT 0,
                 PRIMARY KEY (user_id, symbol)
             );
             """)
+
+            cur.execute("ALTER TABLE positions ADD COLUMN IF NOT EXISTS borrowed DOUBLE PRECISION NOT NULL DEFAULT 0;")
 
             # Create Portfolio Snapshots table
             cur.execute("""

@@ -28,6 +28,7 @@ async function request(path, options = {}) {
 
 export const api = {
   // Market & Trading
+  health: () => request('/'),
   price: (symbol) => request(`/prices/${encodeURIComponent(symbol)}`),
   candles: (symbol, interval = '1m', limit = 120) => request(`/prices/${encodeURIComponent(symbol)}/candles?${new URLSearchParams({ interval, limit })}`),
   order: (payload) => request('/orders', { method: 'POST', body: JSON.stringify(payload) }),

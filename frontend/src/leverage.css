@@ -1,0 +1,5 @@
+.leverage-choices { display: inline-flex; gap: 4px; }
+.leverage-choices button { min-width: 34px; padding: 3px 6px; border: 1px solid #d8e7e9; border-radius: 4px;
+  background: rgba(255, 255, 255, .7); color: #31586c; font-size: 11px; cursor: pointer; }
+.leverage-choices button.leverage-active { border-color: #178f9d; background: #178f9d; color: #fff; }
+.leverage-note { margin: 4px 0 0; color: #a2563f; font-size: 10px; line-height: 1.4; }

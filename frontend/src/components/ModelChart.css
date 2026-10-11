@@ -3,6 +3,9 @@
 .model-chart-shade { position: absolute; top: 0; bottom: 26px; left: 0; z-index: 2; display: none; pointer-events: none;
   border-right: 2px solid #178f9d; background: rgba(113, 137, 154, .09); }
 .model-chart-shade span { position: absolute; top: 6px; right: 8px; color: #71899a; font-size: 9px; }
+.model-chart-now { position: absolute; top: 0; bottom: 26px; z-index: 2; display: none; pointer-events: none;
+  border-left: 1.5px dashed #31586c; }
+.model-chart-now span { position: absolute; top: 6px; left: 5px; color: #31586c; font-size: 9px; white-space: nowrap; }
 .model-chart-start { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .model-chart-start input { flex: 1; min-width: 180px; accent-color: #178f9d; }
 .model-chart-when { display: grid; color: #31586c; font-size: 10px; }

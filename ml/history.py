@@ -21,6 +21,8 @@ from ml.data import random_walk_candles
 
 HOUR_MS = 3_600_000
 CACHE_SECONDS = 300
+# A synthetic fallback is only kept briefly, so real data returns soon after a network blip.
+FALLBACK_CACHE_SECONDS = 30
 _ASSETS = {a["symbol"]: a for a in json.loads(
     (Path(__file__).resolve().parents[1] / "shared" / "assets.json").read_text())}
 _cache = {}   # symbol -> (fetched_at, candles DataFrame, source)
@@ -83,12 +85,17 @@ def _fetch(symbol, n):
 def get_candles(symbol, n=5000):
     """Return (candles, source): up to n closed hourly candles, oldest first."""
     hit = _cache.get(symbol)
-    if hit and time.time() - hit[0] < CACHE_SECONDS and len(hit[1]) >= min(n, len(hit[1])):
+    ttl = FALLBACK_CACHE_SECONDS if hit and hit[2] == "synthetic" else CACHE_SECONDS
+    if hit and time.time() - hit[0] < ttl and len(hit[1]) >= min(n, len(hit[1])):
         return hit[1].tail(n).reset_index(drop=True), hit[2]
     if symbol not in _ASSETS:
         raise KeyError(f"unknown symbol {symbol}")
     try:
-        df, source = _fetch(symbol, n)
+        try:
+            df, source = _fetch(symbol, n)
+        except OSError:           # network blip (DNS, timeout, reset): try once more
+            time.sleep(1)
+            df, source = _fetch(symbol, n)
         df = (df.drop_duplicates("ts").sort_values("ts")
                 .astype({"open": float, "high": float, "low": float, "close": float, "volume": float}))
         now_ms = int(time.time() * 1000)

@@ -18,12 +18,18 @@ WS /stream (server pushes)
 -> {"type":"leaderboard","rows":[...]}
 
 ## Orders
-POST /orders  body: {"user_id":"u_123","symbol":"SOL","side":"buy","qty":2.5}
+POST /orders  body: {"user_id":"u_123","symbol":"SOL","side":"buy","qty":2.5,"leverage":5}
 -> {"order_id":"o_9","status":"filled","symbol":"SOL","side":"buy","qty":2.5,
-    "fill_price":148.32,"ts":1760000000000,"cash_after":99629.2}
+    "fill_price":148.32,"leverage":5,"ts":1760000000000,"cash_after":99629.2}
 Market orders fill at the same price GET /prices returns. 400 for: missing user_id, symbol
 not in assets.json, side not buy/sell, qty not > 0, insufficient funds/position (message says
 how much you have). The account is created with $100,000 on its first order.
+leverage (buys only; 1, 2, 3, 5 or 10, default 1): the buy costs qty*price/leverage of cash and
+the rest is borrowed. Sells repay their share of the debt. A leveraged position is liquidated
+(sold at market, recorded as a sell with status "liquidated") once its equity (value - borrowed)
+drops below 5% of its value; this is checked on every order and account/leaderboard read.
+GET /portfolio positions also carry "borrowed", "position_equity", "leverage" and
+"liquidation_price"; equity = cash + sum(value - borrowed). Orders carry "leverage".
 
 GET /orders/{user_id}?limit=50   (newest first)
 -> [{"order_id":"o_9","symbol":"SOL","side":"buy","qty":2.5,"fill_price":148.32,

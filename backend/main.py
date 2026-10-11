@@ -54,6 +54,11 @@ def read_root():
     return {"message": "Backend is running!"}
 
 START_CASH = 100000.0
+# Leverage on buys: at 5x, a $10,000 position costs $2,000 of cash and borrows $8,000.
+LEVERAGE_CHOICES = (1, 2, 3, 5, 10)
+# A leveraged position is liquidated (sold at market) once its own equity
+# (value - borrowed) falls below this share of its value.
+MAINTENANCE_MARGIN = 0.05
 ASSETS = {a["symbol"]: a for a in json.loads(
     (Path(__file__).resolve().parents[1] / "shared" / "assets.json").read_text())}
 
@@ -142,6 +147,15 @@ def order(body: dict, auth_user: dict | None = Depends(get_optional_user)):
         raise HTTPException(status_code=400, detail="Side must be buy or sell")
     if not (math.isfinite(qty) and qty > 0):
         raise HTTPException(status_code=400, detail="Quantity must be greater than zero")
+    try:
+        leverage = float(body.get("leverage", 1) or 1)
+    except (TypeError, ValueError):
+        leverage = 0.0
+    if leverage not in LEVERAGE_CHOICES:
+        choices = ", ".join(f"{x}x" for x in LEVERAGE_CHOICES)
+        raise HTTPException(status_code=400, detail=f"Leverage must be one of {choices}")
+    if side == "sell":
+        leverage = 1.0   # sells close (part of) a position; leverage only applies when opening
     require_db()
 
     order_id = "o_" + str(uuid.uuid4())[:8]
@@ -159,42 +173,51 @@ def order(body: dict, auth_user: dict | None = Depends(get_optional_user)):
             display_name = (auth_user.get("name") if auth_user else None) or user_id
             cur.execute("INSERT INTO users (id, name, cash) VALUES (%s, %s, %s) ON CONFLICT (id) DO NOTHING",
                         (user_id, display_name, START_CASH))
+            # Settle any leveraged positions that have already run out of margin.
+            _liquidate(cur, user_id, {symbol: price})
             cur.execute("SELECT cash FROM users WHERE id = %s FOR UPDATE", (user_id,))
             cash = cur.fetchone()[0]
-            cur.execute("SELECT qty, avg_price FROM positions WHERE user_id = %s AND symbol = %s FOR UPDATE",
+            cur.execute("SELECT qty, avg_price, borrowed FROM positions WHERE user_id = %s AND symbol = %s FOR UPDATE",
                         (user_id, symbol))
             pres = cur.fetchone()
 
-            cost = price * qty
+            notional = price * qty
             if side == "buy":
-                if cash < cost:
-                    raise HTTPException(status_code=400, detail=f"Insufficient funds: this costs {cost:,.2f} and you have {cash:,.2f}")
-                cash_after = cash - cost
+                margin = notional / leverage          # what this costs in cash
+                borrow = notional - margin            # the rest is borrowed
+                if cash < margin:
+                    at = f" at {leverage:g}x" if leverage > 1 else ""
+                    raise HTTPException(status_code=400, detail=f"Insufficient funds: this needs {margin:,.2f} of cash{at} and you have {cash:,.2f}")
+                cash_after = cash - margin
                 if not pres:
-                    cur.execute("INSERT INTO positions (user_id, symbol, qty, avg_price) VALUES (%s, %s, %s, %s)", (user_id, symbol, qty, price))
+                    cur.execute("INSERT INTO positions (user_id, symbol, qty, avg_price, borrowed) VALUES (%s, %s, %s, %s, %s)",
+                                (user_id, symbol, qty, price, borrow))
                 else:
-                    old_qty, old_avg = pres
+                    old_qty, old_avg, old_borrowed = pres
                     new_qty = old_qty + qty
                     new_avg = ((old_qty * old_avg) + (qty * price)) / new_qty
-                    cur.execute("UPDATE positions SET qty = %s, avg_price = %s WHERE user_id = %s AND symbol = %s", (new_qty, new_avg, user_id, symbol))
+                    cur.execute("UPDATE positions SET qty = %s, avg_price = %s, borrowed = %s WHERE user_id = %s AND symbol = %s",
+                                (new_qty, new_avg, old_borrowed + borrow, user_id, symbol))
             else:
-                held = pres[0] if pres else 0.0
+                held, _, borrowed = pres if pres else (0.0, 0.0, 0.0)
                 if held < qty - 1e-9:
                     raise HTTPException(status_code=400, detail=f"Insufficient position: you hold {held:g} {symbol}")
-                cash_after = cash + cost
+                repay = borrowed * min(1.0, qty / held)   # this sale's share of the debt
+                cash_after = cash + notional - repay
                 new_qty = held - qty
                 if new_qty <= 1e-9:
                     cur.execute("DELETE FROM positions WHERE user_id = %s AND symbol = %s", (user_id, symbol))
                 else:
-                    cur.execute("UPDATE positions SET qty = %s WHERE user_id = %s AND symbol = %s", (new_qty, user_id, symbol))
+                    cur.execute("UPDATE positions SET qty = %s, borrowed = %s WHERE user_id = %s AND symbol = %s",
+                                (new_qty, borrowed - repay, user_id, symbol))
 
             cur.execute("UPDATE users SET cash = %s WHERE id = %s", (cash_after, user_id))
-            cur.execute("INSERT INTO orders (id, user_id, symbol, side, qty, fill_price) VALUES (%s, %s, %s, %s, %s, %s)",
-                        (order_id, user_id, symbol, side, qty, price))
+            cur.execute("INSERT INTO orders (id, user_id, symbol, side, qty, fill_price, leverage) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                        (order_id, user_id, symbol, side, qty, price, leverage))
             ts_ms = int(time.time() * 1000)
 
     return {"order_id": order_id, "status": "filled", "symbol": symbol, "side": side, "qty": qty,
-            "fill_price": price, "ts": ts_ms, "cash_after": cash_after}
+            "fill_price": price, "leverage": leverage, "ts": ts_ms, "cash_after": cash_after}
 
 
 @app.get("/orders/me")
@@ -206,26 +229,68 @@ def my_orders(limit: int = 50, user: dict = Depends(get_current_user)):
 def order_history(user_id: str, limit: int = 50):
     require_db()
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT id, symbol, side, qty, fill_price, status, ts FROM orders "
+        cur.execute("SELECT id, symbol, side, qty, fill_price, status, ts, leverage FROM orders "
                     "WHERE user_id = %s ORDER BY ts DESC LIMIT %s", (user_id, max(1, min(limit, 500))))
         return [{"order_id": oid, "symbol": sym, "side": side, "qty": qty, "fill_price": fill,
-                 "status": status, "ts": int(ts.timestamp() * 1000)}
-                for oid, sym, side, qty, fill, status, ts in cur.fetchall()]
+                 "status": status, "ts": int(ts.timestamp() * 1000), "leverage": lev}
+                for oid, sym, side, qty, fill, status, ts, lev in cur.fetchall()]
 
 
-def _account(cur, user_id, cash, prices):
-    """Mark a user's positions to market. prices caches latest prices across users."""
-    cur.execute("SELECT symbol, qty, avg_price FROM positions WHERE user_id = %s ORDER BY symbol", (user_id,))
+def _price_of(cur, symbol, prices):
+    """Latest price, cached in `prices` across a request (None if unknown)."""
+    if symbol not in prices:
+        quote = latest_price(symbol, cur)
+        prices[symbol] = quote[0] if quote else None
+    return prices[symbol]
+
+
+def liquidation_price(qty, borrowed):
+    """Price at which a leveraged position's equity hits the maintenance margin."""
+    return borrowed / (qty * (1 - MAINTENANCE_MARGIN)) if borrowed > 0 and qty > 0 else None
+
+
+def _liquidate(cur, user_id, prices):
+    """Sell, at market, any leveraged position whose equity (value - borrowed) is below
+    MAINTENANCE_MARGIN of its value. Repays the debt, credits what's left, and records
+    a 'liquidated' sell order. Runs inside the caller's transaction."""
+    cur.execute("SELECT symbol, qty, borrowed FROM positions WHERE user_id = %s AND borrowed > 0 FOR UPDATE", (user_id,))
+    to_close = []
+    for symbol, qty, borrowed in cur.fetchall():
+        price = _price_of(cur, symbol, prices)
+        if price is not None and qty * price - borrowed < MAINTENANCE_MARGIN * qty * price:
+            to_close.append((symbol, qty, borrowed, price))
+    if not to_close:
+        return
+    cur.execute("SELECT cash FROM users WHERE id = %s FOR UPDATE", (user_id,))
+    cash = cur.fetchone()[0]
+    for symbol, qty, borrowed, price in to_close:
+        cash += qty * price - borrowed
+        cur.execute("DELETE FROM positions WHERE user_id = %s AND symbol = %s", (user_id, symbol))
+        cur.execute("INSERT INTO orders (id, user_id, symbol, side, qty, fill_price, status, leverage) "
+                    "VALUES (%s, %s, %s, 'sell', %s, %s, 'liquidated', 1)",
+                    ("o_" + str(uuid.uuid4())[:8], user_id, symbol, qty, price))
+    cur.execute("UPDATE users SET cash = %s WHERE id = %s", (cash, user_id))
+
+
+def _account(cur, user_id, prices):
+    """Liquidate if needed, then mark the user's positions to market.
+    Returns (cash, positions, equity); equity = cash + sum(value - borrowed)."""
+    _liquidate(cur, user_id, prices)
+    cur.execute("SELECT cash FROM users WHERE id = %s", (user_id,))
+    cash = cur.fetchone()[0]
+    cur.execute("SELECT symbol, qty, avg_price, borrowed FROM positions WHERE user_id = %s ORDER BY symbol", (user_id,))
     positions, equity = [], cash
-    for symbol, qty, avg_price in cur.fetchall():
-        if symbol not in prices:
-            quote = latest_price(symbol, cur)
-            prices[symbol] = quote[0] if quote else None
-        last_price = prices[symbol] if prices[symbol] is not None else avg_price
-        equity += last_price * qty
+    for symbol, qty, avg_price, borrowed in cur.fetchall():
+        price = _price_of(cur, symbol, prices)
+        last_price = price if price is not None else avg_price
+        value = last_price * qty
+        equity += value - borrowed
         positions.append({"symbol": symbol, "qty": qty, "avg_price": avg_price, "last_price": last_price,
-                          "unrealized_pnl": (last_price - avg_price) * qty})
-    return positions, equity
+                          "unrealized_pnl": (last_price - avg_price) * qty,
+                          "borrowed": borrowed, "position_equity": value - borrowed,
+                          "leverage": round(value / (value - borrowed), 2) if value - borrowed > 0 else None,
+                          "liquidation_price": liquidation_price(qty, borrowed)})
+    return cash, positions, equity
 
 
 @app.get("/portfolio/me")
@@ -241,8 +306,7 @@ def portfolio(user_id: str):
         res = cur.fetchone()
         if not res:
             return {"user_id": user_id, "cash": START_CASH, "equity": START_CASH, "pnl": 0.0, "pnl_pct": 0.0, "positions": []}
-        cash = res[0]
-        positions, equity = _account(cur, user_id, cash, {})
+        cash, positions, equity = _account(cur, user_id, {})
     pnl = equity - START_CASH
     return {"user_id": user_id, "cash": cash, "equity": equity, "pnl": pnl,
             "pnl_pct": pnl / START_CASH, "positions": positions}
@@ -256,8 +320,8 @@ def leaderboard(limit: int = 20):
         cur.execute("SELECT u.id, u.name, u.is_bot, u.cash FROM users u "
                     "WHERE u.is_bot OR EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id)")
         rows, prices = [], {}
-        for uid, name, is_bot, cash in cur.fetchall():
-            _, equity = _account(cur, uid, cash, prices)
+        for uid, name, is_bot, _ in cur.fetchall():
+            _, _, equity = _account(cur, uid, prices)
             label = name if name and name != uid else f"Trader {uid[-4:]}"
             rows.append({"user_id": uid, "name": label, "is_bot": bool(is_bot), "equity": round(equity, 2),
                          "pnl_pct": round((equity - START_CASH) / START_CASH * 100, 2)})
