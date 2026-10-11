@@ -54,6 +54,9 @@ export const api = {
   updateProfile: (name) => request('/auth/profile', { method: 'PUT', body: JSON.stringify({ name }) }),
   googleUrl: (redirectTo) => request(`/auth/google/url?${new URLSearchParams({ redirect_to: redirectTo })}`),
   googleIdToken: (idToken, nonce) => request('/auth/google', { method: 'POST', body: JSON.stringify({ id_token: idToken, nonce }) }),
-  exchangeCode: (authCode) => request('/auth/exchange-code', { method: 'POST', body: JSON.stringify({ auth_code: authCode }) }),
+  exchangeCode: (authCode, codeVerifier) => request('/auth/exchange-code', {
+    method: 'POST',
+    body: JSON.stringify({ auth_code: authCode, code_verifier: codeVerifier || undefined }),
+  }),
   resetPassword: (email, redirectTo) => request('/auth/reset-password', { method: 'POST', body: JSON.stringify({ email, redirect_to: redirectTo }) }),
 }

@@ -257,12 +257,24 @@ function App() {
   // Restore existing session or exchange OAuth callback code
   useEffect(() => {
     async function restoreSession() {
-      // Check query params for OAuth redirect (?code=...)
+      // 1. Check for OAuth error in query or hash
       const searchParams = new URLSearchParams(window.location.search)
+      const hashClean = window.location.hash.replace(/^#/, '')
+      const hashParams = new URLSearchParams(hashClean)
+
+      const redirectError = searchParams.get('error_description') || searchParams.get('error') || hashParams.get('error_description') || hashParams.get('error')
+      if (redirectError) {
+        console.error('OAuth redirect returned an error:', redirectError)
+        window.history.replaceState({}, document.title, window.location.pathname)
+      }
+
+      // 2. Check query params for OAuth redirect (?code=...)
       const authCode = searchParams.get('code')
       if (authCode) {
         try {
-          const res = await api.exchangeCode(authCode)
+          const codeVerifier = localStorage.getItem('aerorithmetic-code-verifier')
+          const res = await api.exchangeCode(authCode, codeVerifier)
+          localStorage.removeItem('aerorithmetic-code-verifier')
           if (res.session?.access_token) {
             localStorage.setItem('aerorithmetic-access-token', res.session.access_token)
             if (res.session.refresh_token) {
@@ -272,16 +284,21 @@ function App() {
           if (res.user) {
             setCurrentUser(res.user)
             localStorage.setItem('aerorithmetic-user-id', res.user.id)
+            api.me().then((me) => {
+              if (me?.account) setAccountStats(me.account)
+              if (me?.user) setCurrentUser(me.user)
+            }).catch(() => {})
           }
           window.history.replaceState({}, document.title, window.location.pathname)
           return
         } catch (e) {
           console.error('OAuth code exchange error:', e)
+          localStorage.removeItem('aerorithmetic-code-verifier')
+          window.history.replaceState({}, document.title, window.location.pathname)
         }
       }
 
-      // Check hash tokens (#access_token=...)
-      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+      // 3. Check hash tokens (#access_token=...) from implicit OAuth flow
       const hashToken = hashParams.get('access_token')
       if (hashToken) {
         localStorage.setItem('aerorithmetic-access-token', hashToken)
@@ -290,7 +307,7 @@ function App() {
         window.history.replaceState({}, document.title, window.location.pathname)
       }
 
-      // Check stored access token
+      // 4. Validate and restore session with /auth/me
       const token = localStorage.getItem('aerorithmetic-access-token')
       if (token) {
         try {
@@ -300,8 +317,10 @@ function App() {
             if (me.account) setAccountStats(me.account)
             localStorage.setItem('aerorithmetic-user-id', me.user.id)
           }
-        } catch {
+        } catch (err) {
+          console.warn('Session expired or invalid, clearing token:', err)
           localStorage.removeItem('aerorithmetic-access-token')
+          localStorage.removeItem('aerorithmetic-refresh-token')
         }
       }
     }
@@ -442,15 +461,16 @@ function App() {
     return () => { active = false; clearTimeout(requestTimer) }
   }, [forecastEnabled, selectedModelId, selectedSymbol])
 
-  async function refreshPortfolio() {
+  async function refreshPortfolio(overrideUserId) {
+    const targetUserId = overrideUserId || currentUser?.id || defaultGuestId
     setPortfolioLoading(true)
     setPortfolioError('')
     try {
-      const [account, history] = await Promise.all([api.portfolio(activeUserId), api.orders(activeUserId)])
+      const [account, history] = await Promise.all([api.portfolio(targetUserId), api.orders(targetUserId)])
       setPortfolio(account)
       setOrders(history)
       setOrdersError('')
-      if (currentUser) {
+      if (currentUser || overrideUserId) {
         api.me().then((me) => {
           if (me?.account) setAccountStats(me.account)
           if (me?.user) setCurrentUser(me.user)
@@ -785,7 +805,7 @@ function App() {
         onClose={() => setShowAuthModal(false)}
         onAuthSuccess={(user) => {
           setCurrentUser(user)
-          refreshPortfolio()
+          refreshPortfolio(user?.id)
         }}
       />
 

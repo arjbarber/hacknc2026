@@ -63,6 +63,7 @@ def create_user_supabase_client(access_token: Optional[str] = None):
         persist_session=False,
         auto_refresh_token=False,
         headers=headers,
+        flow_type="implicit",
     )
     client = create_client(url, key, options=options)
     if access_token:
@@ -272,6 +273,7 @@ class GoogleOAuthUrlRequest(BaseModel):
 
 class ExchangeCodeRequest(BaseModel):
     auth_code: str = Field(..., description="OAuth code from Supabase redirect callback")
+    code_verifier: Optional[str] = Field(None, description="Optional PKCE code verifier")
 
 
 class UpdateProfileRequest(BaseModel):
@@ -580,7 +582,12 @@ def get_google_oauth_url(
     if client is None or not hasattr(client, "auth"):
         client = get_supabase_client()
     try:
-        target_redirect = (body.redirect_to if body and body.redirect_to else redirect_to) or os.getenv("NEXT_PUBLIC_API_URL") or "http://localhost:3000"
+        target_redirect = (
+            (body.redirect_to if body and body.redirect_to else redirect_to)
+            or os.getenv("FRONTEND_URL")
+            or os.getenv("NEXT_PUBLIC_API_URL")
+            or "http://localhost:3000"
+        )
         res = client.auth.sign_in_with_oauth({
             "provider": "google",
             "options": {
@@ -677,7 +684,10 @@ def exchange_code(
     if client is None or not hasattr(client, "auth"):
         client = get_supabase_client()
     try:
-        res = client.auth.exchange_code_for_session({"auth_code": body.auth_code})
+        exchange_params: Dict[str, Any] = {"auth_code": body.auth_code}
+        if body.code_verifier:
+            exchange_params["code_verifier"] = body.code_verifier
+        res = client.auth.exchange_code_for_session(exchange_params)
         if not res or not res.user or not res.session:
             raise HTTPException(status_code=401, detail="Failed to exchange authorization code")
 
