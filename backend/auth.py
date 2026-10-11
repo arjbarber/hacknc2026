@@ -235,6 +235,10 @@ class ExchangeCodeRequest(BaseModel):
     auth_code: str = Field(..., description="OAuth code from Supabase redirect callback")
 
 
+class UpdateProfileRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100, description="Display name for Tiger Data profile")
+
+
 # --- Auth Endpoints ---
 
 @router.post("/signup")
@@ -454,6 +458,33 @@ def update_password(body: UpdatePasswordRequest, user: Dict[str, Any] = Depends(
         raise HTTPException(status_code=getattr(e, "status", 400) or 400, detail=e.message)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Password update failed: {str(e)}")
+
+
+@router.put("/profile")
+def update_profile(body: UpdateProfileRequest, user: Dict[str, Any] = Depends(get_current_user)):
+    """Update user display name in Tiger Data users table and sync metadata."""
+    user_id = user["id"]
+    new_name = body.name.strip()
+    db_url = os.getenv("TIGER_DATABASE_URL")
+    if db_url:
+        try:
+            with psycopg.connect(db_url) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("UPDATE users SET name = %s WHERE id = %s", (new_name, user_id))
+                conn.commit()
+        except Exception as e:
+            print(f"Failed to update profile name in Tiger Data: {e}")
+
+    # Also update Supabase metadata if client is available
+    if is_supabase_configured():
+        try:
+            client = get_supabase_client()
+            client.auth.update_user({"data": {"name": new_name}})
+        except Exception:
+            pass
+
+    user["name"] = new_name
+    return {"status": "success", "user": user}
 
 
 @router.get("/google/url")
