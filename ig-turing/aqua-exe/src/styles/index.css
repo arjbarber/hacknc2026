@@ -114,7 +114,7 @@ body {
 .brand-mark { display: block; width: auto; object-fit: contain; filter: drop-shadow(0 2px 2px rgba(53,38,95,.38)); }
 .brand-mark--header { height: 56px; max-width: min(330px, 42vw); }
 .brand-mark--window { height: 22px; max-width: 150px; }
-.brand-mark--taskbar { height: 20px; max-width: 125px; }
+.brand-mark--taskbar { height: 32px; max-width: 205px; }
 .desktop-welcome__bar button { width: 28px; height: 24px; border: 1px solid rgba(153,45,94,.35); border-radius: 8px; color: white; font-size: 20px; line-height: 18px; cursor: pointer; background: linear-gradient(#ffb9d9, #e96aa7); box-shadow: inset 0 1px white; }
 .desktop-welcome__body { position: relative; z-index: 1; display: flex; gap: 18px; align-items: center; padding: 28px; }
 .desktop-welcome h2 { margin: 0 0 5px; font-family: var(--font-display); font-size: clamp(20px, 3vw, 27px); color: #155e83; }
@@ -136,7 +136,7 @@ body {
 .taskbar > * { position: relative; z-index: 1; }
 .start-pearl { width: 44px; height: 44px; border-radius: 50%; border: 1px solid white; color: white; font-size: 25px; cursor: pointer; background: radial-gradient(circle at 32% 22%, white, #f4b8d4 27%, #59cfe8 72%); box-shadow: inset 0 -5px 10px rgba(27,109,158,.3), 0 3px 8px rgba(40,110,155,.3); }
 .taskbar__app { padding: 8px 16px; border-radius: 12px; font-family: var(--font-display); font-weight: 700; background: rgba(255,255,255,.48); }
-.taskbar__brand { display: flex; align-items: center; padding-block: 6px; }
+.taskbar__brand { display: flex; align-items: center; padding: 0 4px; background: transparent; border: 0; box-shadow: none; }
 .taskbar__app--active { border: 1px solid rgba(255,255,255,.9); color: #175979; cursor: pointer; }
 .taskbar__spacer { flex: 1; }
 .demo-reset { border: 1px solid rgba(255,255,255,.9); border-radius: 999px; padding: 7px 13px; color: #175979; font: 700 12px var(--font-display); cursor: pointer; background: rgba(255,255,255,.48); }
@@ -235,6 +235,7 @@ body {
   opacity: .8;
 }
 .titlebar { display: flex; align-items: center; gap: 13px; min-height: 70px; padding: 8px 20px 8px 12px; background: linear-gradient(180deg, rgba(217,250,255,.78), rgba(120,190,225,.45)); }
+.titlebar--brand { min-height: 0; padding: 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; backdrop-filter: none; }
 .orbs { display: flex; gap: 6px; margin-left: 6px; }
 .orb {
   width: 15px; height: 15px; border-radius: 50%;
@@ -242,8 +243,12 @@ body {
   box-shadow: inset 0 -2px 3px rgba(0,60,100,.3), 0 1px 3px rgba(40,120,180,.4);
 }
 
-.custom-cursor { position: fixed; z-index: 1000; left: 0; top: 0; width: 38px; height: 38px; opacity: 0; pointer-events: none; background: url('/images/cursor.png') center / contain no-repeat; filter: drop-shadow(0 1px 0 #173f66) drop-shadow(0 2px 3px rgba(19,48,91,.58)); will-change: transform; transition: opacity .1s ease; }
+.custom-cursor { position: fixed; z-index: 1000; left: 0; top: 0; width: 38px; height: 38px; opacity: 0; pointer-events: none; background: url('/images/cursor.png') center / contain no-repeat; filter: drop-shadow(0 1px 0 #173f66) drop-shadow(0 2px 3px rgba(19,48,91,.58)); will-change: transform; transition: opacity .1s ease; isolation: isolate; }
 .custom-cursor.is-visible { opacity: 1; }
+.custom-cursor::before { content: ""; position: absolute; z-index: -2; left: 50%; top: 50%; width: 92px; height: 92px; border-radius: 50%; transform: translate(-50%, -50%); background: radial-gradient(circle, rgba(255,255,255,.55) 0 5%, rgba(244,184,212,.34) 20%, rgba(141,236,241,.22) 46%, transparent 72%); filter: blur(7px); opacity: .72; animation: cursor-glow 1.35s ease-in-out infinite alternate; }
+.custom-cursor::after { content: "✦  ·  ✧\A  ˚  ✦  ·"; white-space: pre; position: absolute; z-index: -1; left: -28px; top: -25px; width: 94px; height: 88px; color: rgba(255,255,255,.88); font: 700 17px/2.25 var(--font-display); letter-spacing: 7px; text-align: center; text-shadow: 0 0 7px rgba(255,255,255,.95), 0 0 13px rgba(244,184,212,.85), 0 0 18px rgba(141,236,241,.75); opacity: .7; transform-origin: center; animation: cursor-glitter 1.8s linear infinite; }
+@keyframes cursor-glow { to { opacity: .95; transform: translate(-50%, -50%) scale(1.16); } }
+@keyframes cursor-glitter { 50% { opacity: .38; transform: rotate(10deg) scale(.92); } 100% { transform: rotate(20deg); } }
 
 @media (pointer: fine) {
   html, body, #root, #root * { cursor: none !important; }
@@ -308,13 +313,14 @@ body {
 @keyframes bob { 50% { transform: translateY(-14px) scale(1.04); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .ray, .aqua-bg__caustics, .holo-sticker, .loader__bubble, .desktop-bubble, .listen-btn, .player-cd, .equalizer i, .fish-tank button { animation: none; }
+  .ray, .aqua-bg__caustics, .holo-sticker, .loader__bubble, .desktop-bubble, .listen-btn, .player-cd, .equalizer i, .fish-tank button, .custom-cursor::before, .custom-cursor::after { animation: none; }
   .phone-transition, .desktop-reveal { transition-duration: .15s; }
   .desktop-reveal.is-visible .desktop-icon, .desktop-reveal.is-visible .desktop-welcome { animation-duration: .01s; animation-delay: 0s; }
 }
 
 @media (max-width: 720px) {
   .titlebar { gap: 8px; min-height: 49px; padding: 5px 11px 5px 7px; }
+  .titlebar--brand { min-height: 0; padding: 0; }
   .brand-mark--header { height: 40px; max-width: min(225px, 55vw); }
   .orbs { gap: 4px; margin-left: 3px; }
   .orb { width: 11px; height: 11px; }
@@ -328,6 +334,8 @@ body {
   .desktop-welcome.glass { top: 43%; }
   .desktop-bubble--one { width: 70px; height: 70px; }
   .taskbar__app { display: none; }
+  .taskbar__brand { display: flex; }
+  .brand-mark--taskbar { height: 27px; max-width: 160px; }
   .demo-reset { padding: 6px 9px; }
   .aqua-player.glass { width: calc(100vw - 20px); max-height: calc(100vh - 88px); top: calc(50% - 22px); }
   .aqua-player__body { grid-template-columns: 100px 1fr; max-height: calc(100vh - 132px); padding: 13px; gap: 10px 13px; }

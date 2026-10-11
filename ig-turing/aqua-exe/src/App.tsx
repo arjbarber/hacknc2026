@@ -142,12 +142,7 @@ export function App() {
 
       <div className="ui-layer">
         {/* Vista-style title bar */}
-        <header className="glass titlebar" style={{ position: 'absolute', top: 22, left: 22 }} aria-label="CallMeMaybe">
-          <span className="orbs" aria-hidden="true">
-            <i className="orb" style={{ ['--c' as string]: '#8DECF1' }} />
-            <i className="orb" style={{ ['--c' as string]: '#A5E8C3' }} />
-            <i className="orb" style={{ ['--c' as string]: '#F4B8D4' }} />
-          </span>
+        <header className="titlebar titlebar--brand" style={{ position: 'absolute', top: 22, left: 22 }} aria-label="CallMeMaybe">
           <BrandMark className="brand-mark--header" />
         </header>
 
