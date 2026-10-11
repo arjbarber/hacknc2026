@@ -78,6 +78,9 @@ body {
   position: absolute; left: 0; right: 0; bottom: 44px; display: flex; flex-direction: column; align-items: center; gap: 12px;
   pointer-events: none; transition: opacity .35s, transform .35s;
 }
+.language-picker { display: flex; gap: 6px; padding: 5px; border: 1px solid rgba(255,255,255,.85); border-radius: 999px; background: rgba(255,255,255,.38); backdrop-filter: blur(10px); pointer-events: auto; }
+.language-picker button { padding: 7px 15px; border: 0; border-radius: 999px; color: #1d5c78; font: 700 12px var(--font-display); cursor: pointer; background: transparent; }
+.language-picker button.is-active { color: #76345e; background: linear-gradient(#fff, #f4b8d4); box-shadow: 0 2px 8px rgba(65,112,161,.2); }
 .entry-controls.is-hidden, .attribution.is-hidden { opacity: 0; transform: translateY(14px); pointer-events: none; }
 .entry-actions { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
 .entry-actions .aqua-btn { --h: 56px; padding-right: 25px; font-size: 18px; }
@@ -107,6 +110,11 @@ body {
 .desktop-reveal.is-visible .desktop-welcome { animation: window-arrive .65s cubic-bezier(.2,1.25,.35,1) .48s forwards; }
 @keyframes window-arrive { to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
 .desktop-welcome__bar { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 9px 18px; font-family: var(--font-display); font-weight: 700; color: #22567b; background: linear-gradient(#f9fdff, rgba(205,235,252,.72)); border-bottom: 1px solid rgba(255,255,255,.8); }
+.brand-title { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.brand-mark { display: block; width: auto; object-fit: contain; filter: drop-shadow(0 2px 2px rgba(53,38,95,.38)); }
+.brand-mark--header { height: 56px; max-width: min(330px, 42vw); }
+.brand-mark--window { height: 22px; max-width: 150px; }
+.brand-mark--taskbar { height: 32px; max-width: 205px; }
 .desktop-welcome__bar button { width: 28px; height: 24px; border: 1px solid rgba(153,45,94,.35); border-radius: 8px; color: white; font-size: 20px; line-height: 18px; cursor: pointer; background: linear-gradient(#ffb9d9, #e96aa7); box-shadow: inset 0 1px white; }
 .desktop-welcome__body { position: relative; z-index: 1; display: flex; gap: 18px; align-items: center; padding: 28px; }
 .desktop-welcome h2 { margin: 0 0 5px; font-family: var(--font-display); font-size: clamp(20px, 3vw, 27px); color: #155e83; }
@@ -128,6 +136,7 @@ body {
 .taskbar > * { position: relative; z-index: 1; }
 .start-pearl { width: 44px; height: 44px; border-radius: 50%; border: 1px solid white; color: white; font-size: 25px; cursor: pointer; background: radial-gradient(circle at 32% 22%, white, #f4b8d4 27%, #59cfe8 72%); box-shadow: inset 0 -5px 10px rgba(27,109,158,.3), 0 3px 8px rgba(40,110,155,.3); }
 .taskbar__app { padding: 8px 16px; border-radius: 12px; font-family: var(--font-display); font-weight: 700; background: rgba(255,255,255,.48); }
+.taskbar__brand { display: flex; align-items: center; padding: 0 4px; background: transparent; border: 0; box-shadow: none; }
 .taskbar__app--active { border: 1px solid rgba(255,255,255,.9); color: #175979; cursor: pointer; }
 .taskbar__spacer { flex: 1; }
 .demo-reset { border: 1px solid rgba(255,255,255,.9); border-radius: 999px; padding: 7px 13px; color: #175979; font: 700 12px var(--font-display); cursor: pointer; background: rgba(255,255,255,.48); }
@@ -143,9 +152,8 @@ body {
 .app-window__bar { position: relative; z-index: 2; display: flex; justify-content: space-between; align-items: center; padding: 9px 11px 9px 17px; font: 700 14px var(--font-display); color: #2a5b7b; background: linear-gradient(180deg, rgba(255,255,255,.94), rgba(190,229,249,.74)); border-bottom: 1px solid rgba(255,255,255,.85); }
 .app-window__bar button { width: 29px; height: 25px; display: grid; place-items: center; border: 1px solid rgba(149,43,93,.35); border-radius: 8px; color: white; cursor: pointer; background: linear-gradient(#ffbddd, #e96da9); box-shadow: inset 0 1px white; }
 .aqua-player__body { position: relative; z-index: 1; display: grid; grid-template-columns: 180px 1fr; gap: 14px 22px; max-height: calc(100vh - 150px); padding: 20px 22px 18px; overflow: auto; background: radial-gradient(circle at 12% 12%, rgba(244,184,212,.45), transparent 25%), linear-gradient(145deg, rgba(245,253,255,.6), rgba(141,236,241,.3) 52%, rgba(205,186,247,.4)); }
-.player-cd { position: relative; align-self: center; justify-self: center; width: 155px; height: 155px; display: grid; place-items: center; border-radius: 50%; color: #fff; font: 800 18px var(--font-display); letter-spacing: .18em; text-shadow: 0 2px 5px #586ab7; background: conic-gradient(#fff, #8decf1, #cdbaf7, #f4b8d4, #fff2bd, #8decf1, #fff); box-shadow: inset 0 0 0 12px rgba(255,255,255,.28), inset 0 0 24px rgba(61,87,161,.35), 0 9px 25px rgba(45,119,171,.3); }
-.player-cd::after { content: ""; position: absolute; width: 39px; height: 39px; border-radius: 50%; background: radial-gradient(circle, #325873 0 18%, #eafaff 20% 52%, #91dbea 55%); box-shadow: 0 0 0 4px rgba(255,255,255,.44); }
-.player-cd span { transform: translateY(-45px); }
+.player-cd { position: relative; align-self: center; justify-self: center; width: 155px; height: 155px; display: grid; place-items: center; border-radius: 50%; filter: drop-shadow(0 9px 13px rgba(45,119,171,.38)); }
+.player-cd img { width: 100%; height: 100%; object-fit: contain; border-radius: 50%; }
 .player-cd.is-playing { animation: cd-spin 2.7s linear infinite; }
 @keyframes cd-spin { to { transform: rotate(360deg); } }
 .player-now { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 5px; }
@@ -195,6 +203,22 @@ body {
 .achievement-toast strong { font: 700 14px var(--font-display); }
 @keyframes toast-enter { from { opacity: 0; transform: translateY(18px) scale(.9); } }
 
+/* ───────── desktop mini apps ───────── */
+.mini-window.glass { position: absolute; z-index: 10; left: 50%; top: 50%; width: min(620px, calc(100vw - 210px)); transform: translate(-50%, -50%); overflow: hidden; animation: player-enter .4s cubic-bezier(.18,1.2,.3,1) both; }
+.fish-window__body { height: 390px; display: grid; grid-template-columns: 1.35fr .65fr; align-items: center; background: linear-gradient(145deg, rgba(245,253,255,.75), rgba(141,236,241,.4), rgba(244,184,212,.4)); }
+.fish-canvas { height: 100%; min-width: 0; }
+.fish-quit { display: grid; justify-items: center; gap: 18px; padding: 20px; }
+.fish-quit span { font: 800 clamp(34px, 6vw, 62px) var(--font-display); color: #82416c; text-shadow: 0 2px white; }
+.fish-quit button, .weather-window form > button { padding: 9px 14px; border: 1px solid white; border-radius: 999px; color: #245b78; font: 700 12px var(--font-display); cursor: pointer; background: linear-gradient(#fff, #bceff4); }
+.fish-quit button:disabled { opacity: .6; cursor: wait; }
+.weather-window { width: min(460px, calc(100vw - 40px)) !important; }
+.weather-window form { display: grid; gap: 16px; padding: 28px; background: linear-gradient(145deg, rgba(245,253,255,.8), rgba(141,236,241,.45)); }
+.weather-window label { display: grid; gap: 7px; font: 700 15px var(--font-display); }
+.weather-window input { padding: 12px 14px; border: 1px solid rgba(255,255,255,.9); border-radius: 13px; color: #174f6c; font: inherit; background: rgba(255,255,255,.62); outline: none; }
+.weather-window p { margin: 0; padding: 18px; border-radius: 16px; text-align: center; color: #784269; font: 800 20px var(--font-display); background: rgba(255,255,255,.48); }
+.message-window { width: min(470px, calc(100vw - 40px)) !important; }
+.message-window > p { position: relative; z-index: 1; margin: 0; padding: 42px 28px; text-align: center; color: #784269; font: 800 clamp(20px, 4vw, 28px) var(--font-display); background: linear-gradient(145deg, rgba(245,253,255,.82), rgba(141,236,241,.42), rgba(244,184,212,.35)); }
+
 /* ───────── glossy window chrome (Vista-ish) ───────── */
 .glass {
   position: relative;
@@ -210,22 +234,25 @@ body {
   background: linear-gradient(115deg, rgba(255,255,255,.55) 0%, rgba(255,255,255,0) 38%);
   opacity: .8;
 }
-.titlebar { display: flex; align-items: center; gap: 12px; padding: 8px 10px 8px 16px; }
-.titlebar__name {
-  font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: .01em;
-  background: linear-gradient(180deg, #ffffff 0%, #e9f7ff 38%, #7fc4ea 52%, #3e9ed6 100%);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-  -webkit-text-stroke: .6px rgba(30,110,170,.55);
-  filter: drop-shadow(0 1.5px 0 rgba(255,255,255,.9)) drop-shadow(0 4px 8px rgba(40,130,190,.35));
-}
-.titlebar__name em { font-style: normal; color: #f48fbf; -webkit-text-stroke: .6px rgba(190,70,130,.5);
-  background: linear-gradient(180deg, #fff, #ffd3e8 40%, #f08cbc 55%, #d8609b 100%);
-  -webkit-background-clip: text; background-clip: text; }
+.titlebar { display: flex; align-items: center; gap: 13px; min-height: 70px; padding: 8px 20px 8px 12px; background: linear-gradient(180deg, rgba(217,250,255,.78), rgba(120,190,225,.45)); }
+.titlebar--brand { min-height: 0; padding: 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; backdrop-filter: none; }
 .orbs { display: flex; gap: 6px; margin-left: 6px; }
 .orb {
   width: 15px; height: 15px; border-radius: 50%;
   background: radial-gradient(circle at 35% 28%, #fff 0 14%, var(--c) 46%, color-mix(in srgb, var(--c) 65%, #1a6a9a) 100%);
   box-shadow: inset 0 -2px 3px rgba(0,60,100,.3), 0 1px 3px rgba(40,120,180,.4);
+}
+
+.custom-cursor { position: fixed; z-index: 1000; left: 0; top: 0; width: 38px; height: 38px; opacity: 0; pointer-events: none; background: url('/images/cursor.png') center / contain no-repeat; filter: drop-shadow(0 1px 0 #173f66) drop-shadow(0 2px 3px rgba(19,48,91,.58)); will-change: transform; transition: opacity .1s ease; isolation: isolate; }
+.custom-cursor.is-visible { opacity: 1; }
+.custom-cursor::before { content: ""; position: absolute; z-index: -2; left: 50%; top: 50%; width: 92px; height: 92px; border-radius: 50%; transform: translate(-50%, -50%); background: radial-gradient(circle, rgba(255,255,255,.55) 0 5%, rgba(244,184,212,.34) 20%, rgba(141,236,241,.22) 46%, transparent 72%); filter: blur(7px); opacity: .72; animation: cursor-glow 1.35s ease-in-out infinite alternate; }
+.custom-cursor::after { content: "✦  ·  ✧\A  ˚  ✦  ·"; white-space: pre; position: absolute; z-index: -1; left: -28px; top: -25px; width: 94px; height: 88px; color: rgba(255,255,255,.88); font: 700 17px/2.25 var(--font-display); letter-spacing: 7px; text-align: center; text-shadow: 0 0 7px rgba(255,255,255,.95), 0 0 13px rgba(244,184,212,.85), 0 0 18px rgba(141,236,241,.75); opacity: .7; transform-origin: center; animation: cursor-glitter 1.8s linear infinite; }
+@keyframes cursor-glow { to { opacity: .95; transform: translate(-50%, -50%) scale(1.16); } }
+@keyframes cursor-glitter { 50% { opacity: .38; transform: rotate(10deg) scale(.92); } 100% { transform: rotate(20deg); } }
+
+@media (pointer: fine) {
+  html, body, #root, #root * { cursor: none !important; }
+  input, textarea, [contenteditable="true"], input *, textarea *, [contenteditable="true"] * { cursor: text !important; }
 }
 
 /* ───────── convex glossy button ───────── */
@@ -286,12 +313,17 @@ body {
 @keyframes bob { 50% { transform: translateY(-14px) scale(1.04); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .ray, .aqua-bg__caustics, .holo-sticker, .loader__bubble, .desktop-bubble, .listen-btn, .player-cd, .equalizer i, .fish-tank button { animation: none; }
+  .ray, .aqua-bg__caustics, .holo-sticker, .loader__bubble, .desktop-bubble, .listen-btn, .player-cd, .equalizer i, .fish-tank button, .custom-cursor::before, .custom-cursor::after { animation: none; }
   .phone-transition, .desktop-reveal { transition-duration: .15s; }
   .desktop-reveal.is-visible .desktop-icon, .desktop-reveal.is-visible .desktop-welcome { animation-duration: .01s; animation-delay: 0s; }
 }
 
 @media (max-width: 720px) {
+  .titlebar { gap: 8px; min-height: 49px; padding: 5px 11px 5px 7px; }
+  .titlebar--brand { min-height: 0; padding: 0; }
+  .brand-mark--header { height: 40px; max-width: min(225px, 55vw); }
+  .orbs { gap: 4px; margin-left: 3px; }
+  .orb { width: 11px; height: 11px; }
   .entry-controls { bottom: 62px; }
   .entry-prompt { font-size: 16px; }
   .entry-actions .aqua-btn { --h: 48px; padding: 0 16px 0 10px; font-size: 14px; gap: 7px; }
@@ -302,12 +334,14 @@ body {
   .desktop-welcome.glass { top: 43%; }
   .desktop-bubble--one { width: 70px; height: 70px; }
   .taskbar__app { display: none; }
+  .taskbar__brand { display: flex; }
+  .brand-mark--taskbar { height: 27px; max-width: 160px; }
   .demo-reset { padding: 6px 9px; }
   .aqua-player.glass { width: calc(100vw - 20px); max-height: calc(100vh - 88px); top: calc(50% - 22px); }
   .aqua-player__body { grid-template-columns: 100px 1fr; max-height: calc(100vh - 132px); padding: 13px; gap: 10px 13px; }
   .player-cd { width: 94px; height: 94px; font-size: 12px; }
-  .player-cd::after { width: 26px; height: 26px; }
-  .player-cd span { transform: translateY(-29px); }
+  .mini-window.glass { width: calc(100vw - 20px); }
+  .fish-window__body { height: min(430px, calc(100vh - 140px)); grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
   .normal-volume { grid-template-columns: 1fr; }
   .volume-games { grid-template-columns: 1fr; }
   .volume-games article { padding: 9px; }

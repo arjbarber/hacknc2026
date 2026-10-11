@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Pause, Play, RotateCcw, Upload, Volume2, VolumeX, X } from 'lucide-react'
+import type { Translation } from '../../i18n'
+import { BrandMark } from '../ui/BrandMark'
 
 const SAFE_CAP = 0.65
 const fishVolumes = [0.08, 0.17, 0.31, 0.48, SAFE_CAP]
 
 interface Props {
   onClose: () => void
+  t: Translation
 }
 
 const formatTime = (seconds: number) => {
@@ -13,12 +16,12 @@ const formatTime = (seconds: number) => {
   return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`
 }
 
-export function AquaPlayer({ onClose }: Props) {
+export function AquaPlayer({ onClose, t }: Props) {
   const audio = useRef<HTMLAudioElement>(null)
   const objectUrl = useRef<string | null>(null)
   const inflateTimer = useRef<number | null>(null)
   const chaosTimer = useRef<number | null>(null)
-  const [trackName, setTrackName] = useState('No authorized audio selected')
+  const [trackName, setTrackName] = useState('manifest - TRALALA Official Music Video.mp3')
   const [playing, setPlaying] = useState(false)
   const [duration, setDuration] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
@@ -30,7 +33,7 @@ export function AquaPlayer({ onClose }: Props) {
   const [inflate, setInflate] = useState(14)
   const [popped, setPopped] = useState(false)
   const [pauseDrama, setPauseDrama] = useState(false)
-  const [message, setMessage] = useState('Please insert one legally obtainable banger.')
+  const [message, setMessage] = useState(t.playerInitial)
   const [achievement, setAchievement] = useState<string | null>(null)
 
   const award = useCallback((title: string) => {
@@ -47,16 +50,16 @@ export function AquaPlayer({ onClose }: Props) {
   }, [])
 
   const emergencyMute = () => {
-    setVolume(0, 'Emergency mute respected. Chaos has been legally restrained.')
+    setVolume(0, t.muted)
     setChaos(false)
-    award('Silence Is Golden-ish')
+    award(t.silenceAchievement)
   }
 
   const chooseFile = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
     if (!file.type.startsWith('audio/')) {
-      setMessage('That file is insufficiently musical.')
+      setMessage(t.invalidAudio)
       return
     }
     if (objectUrl.current) URL.revokeObjectURL(objectUrl.current)
@@ -67,13 +70,13 @@ export function AquaPlayer({ onClose }: Props) {
     }
     setTrackName(file.name)
     setCurrentTime(0)
-    setMessage('Track accepted. Copyright lawyers remain calm.')
+    setMessage(t.trackAccepted)
   }
 
   const togglePlayback = async () => {
     const player = audio.current
     if (!player?.src) {
-      setMessage('Select your own audio file first. Piracy is not very aquatic.')
+      setMessage(t.selectAudio)
       return
     }
     if (playing) {
@@ -83,9 +86,9 @@ export function AquaPlayer({ onClose }: Props) {
     try {
       await player.play()
       setPlaying(true)
-      setMessage('Now playing at a responsibly chaotic volume.')
+      setMessage(t.nowPlaying)
     } catch {
-      setMessage('The browser declined our musical ambitions. Try Play again.')
+      setMessage(t.playBlocked)
     }
   }
 
@@ -93,8 +96,8 @@ export function AquaPlayer({ onClose }: Props) {
     audio.current?.pause()
     setPlaying(false)
     setPauseDrama(false)
-    setMessage(apology ? 'I forgive you. Eventually.' : 'Paused. The CD is processing this rejection.')
-    if (apology) award('Emotionally Available')
+    setMessage(apology ? t.forgiven : t.paused)
+    if (apology) award(t.emotionalAchievement)
   }
 
   const reset = () => {
@@ -109,7 +112,7 @@ export function AquaPlayer({ onClose }: Props) {
     setInflate(14)
     setPopped(false)
     setSliderOffset(0)
-    setMessage('Player reset. It remembers everything.')
+    setMessage(t.playerReset)
   }
 
   const startInflating = () => {
@@ -122,8 +125,8 @@ export function AquaPlayer({ onClose }: Props) {
           if (inflateTimer.current) window.clearInterval(inflateTimer.current)
           inflateTimer.current = null
           setPopped(true)
-          setVolume(.01, 'POP! Volume reset to 1%. The bubble has filed a complaint.')
-          award('Professional Bubble Liability')
+          setVolume(.01, t.pop)
+          award(t.bubbleAchievement)
           return 8
         }
         setVolume((next / 100) * SAFE_CAP)
@@ -143,8 +146,8 @@ export function AquaPlayer({ onClose }: Props) {
       const next = count + 1
       if (next % 3 === 0) {
         setSliderOffset((current) => current === 0 ? 46 : -current)
-        setMessage('The slider has boundaries. Please respect them.')
-        if (next === 6) award('Slider Chaser')
+        setMessage(t.sliderBoundaries)
+        if (next === 6) award(t.sliderAchievement)
       }
       return next
     })
@@ -171,7 +174,7 @@ export function AquaPlayer({ onClose }: Props) {
     const schedule = () => {
       chaosTimer.current = window.setTimeout(() => {
         const next = .1 + Math.random() * (SAFE_CAP - .1)
-        setVolume(next, `The ocean has adjusted volume to ${Math.round(next * 100)}% on your behalf.`)
+        setVolume(next, t.oceanVolume(Math.round(next * 100)))
         schedule()
       }, 11000 + Math.random() * 7000)
     }
@@ -188,35 +191,35 @@ export function AquaPlayer({ onClose }: Props) {
     if (objectUrl.current) URL.revokeObjectURL(objectUrl.current)
   }, [])
 
+  useEffect(() => setMessage(t.playerInitial), [t])
+
   return (
-    <section className="aqua-player glass" aria-label="AQUA Player">
-      <audio ref={audio} preload="metadata" />
+    <section className="aqua-player glass" aria-label={t.player}>
+      <audio ref={audio} preload="metadata" src="/music/manifest-tralala.mp3" />
       <header className="app-window__bar">
-        <span>♫ AQUA Player — emotionally available edition</span>
-        <button type="button" onClick={onClose} aria-label="Close AQUA Player"><X size={16} /></button>
+        <span className="brand-title"><span aria-hidden="true">♫</span><BrandMark className="brand-mark--window" /><span>{t.playerEdition}</span></span>
+        <button type="button" onClick={onClose} aria-label={t.closePlayer}><X size={16} /></button>
       </header>
 
       <div className="aqua-player__body">
-        <div className={`player-cd ${playing ? 'is-playing' : ''}`} aria-hidden="true">
-          <span>AQUA</span><i />
-        </div>
+        <div className={`player-cd ${playing ? 'is-playing' : ''}`} aria-hidden="true"><img src="/images/holographic-dolphin-ocean-disc.png" alt="" /></div>
 
         <div className="player-now">
-          <small>INTENDED FEATURED TRACK</small>
-          <strong>“Barbie Girl” — bring an authorized copy</strong>
+          <small>{t.dolphinDrive}</small>
+          <strong>TRALALA</strong>
           <span className="player-file">{trackName}</span>
           <div className="equalizer" aria-hidden="true">
             {Array.from({ length: 14 }, (_, index) => <i key={index} style={{ '--eq': `${(index % 5) + 2}` } as React.CSSProperties} />)}
           </div>
           <label className="file-picker">
-            <Upload size={15} /> Choose audio file
+            <Upload size={15} /> {t.chooseAudio}
             <input type="file" accept="audio/*" onChange={chooseFile} />
           </label>
         </div>
 
         <div className="player-progress">
           <span>{formatTime(currentTime)}</span>
-          <input aria-label="Track progress" type="range" min="0" max={duration || 1} step=".1" value={Math.min(currentTime, duration || 1)} onChange={(event) => {
+          <input aria-label={t.trackProgress} type="range" min="0" max={duration || 1} step=".1" value={Math.min(currentTime, duration || 1)} onChange={(event) => {
             const next = Number(event.target.value)
             if (audio.current) audio.current.currentTime = next
             setCurrentTime(next)
@@ -225,26 +228,26 @@ export function AquaPlayer({ onClose }: Props) {
         </div>
 
         <div className="player-controls">
-          <button type="button" className="player-main" onClick={togglePlayback}>{playing ? <Pause /> : <Play />}{playing ? 'Pause?' : 'Play'}</button>
+          <button type="button" className="player-main" onClick={togglePlayback}>{playing ? <Pause /> : <Play />}{playing ? t.pause : t.play}</button>
           <button type="button" onClick={() => {
-            if (volume === 0) setVolume(lastAudibleVolume, 'Fine. You may have sound again.')
+            if (volume === 0) setVolume(lastAudibleVolume, t.soundAgain)
             else emergencyMute()
-          }}>{volume === 0 ? <Volume2 /> : <VolumeX />}{volume === 0 ? 'Unmute' : 'Emergency mute'}</button>
-          <button type="button" onClick={reset}><RotateCcw /> Reset</button>
+          }}>{volume === 0 ? <Volume2 /> : <VolumeX />}{volume === 0 ? t.unmute : t.emergencyMute}</button>
+          <button type="button" onClick={reset}><RotateCcw /> {t.reset}</button>
           <label className="chaos-switch"><input type="checkbox" checked={chaos} onChange={(event) => {
             setChaos(event.target.checked)
             setSliderOffset(0)
-            setMessage(event.target.checked ? 'Chaos is back from lunch.' : 'Chaos Off. Your boundaries are valid.')
-          }} /> Chaos {chaos ? 'On' : 'Off'}</label>
+            setMessage(event.target.checked ? t.chaosBack : t.chaosOff)
+          }} /> {t.chaos} {chaos ? t.on : t.off}</label>
         </div>
 
         <div className="normal-volume">
-          <div><Volume2 size={16} /> Safe volume: {Math.round(volume * 100)}% <small>(cap 65%)</small></div>
-          <input aria-label="Safe volume" className="runaway-slider" style={{ transform: `translateX(${sliderOffset}px)` }} type="range" min="0" max={SAFE_CAP} step=".01" value={volume} onPointerEnter={temptSlider} onChange={(event) => {
+          <div><Volume2 size={16} /> {t.safeVolume}: {Math.round(volume * 100)}% <small>{t.cap}</small></div>
+          <input aria-label={t.safeVolume} className="runaway-slider" style={{ transform: `translateX(${sliderOffset}px)` }} type="range" min="0" max={SAFE_CAP} step=".01" value={volume} onPointerEnter={temptSlider} onChange={(event) => {
             let next = Number(event.target.value)
             if (chaos && sliderDodges > 0 && sliderDodges % 4 === 0) {
               next = SAFE_CAP - next
-              setMessage('Excellent choice. I have selected the opposite.')
+              setMessage(t.opposite)
             }
             setVolume(next)
           }} />
@@ -252,24 +255,24 @@ export function AquaPlayer({ onClose }: Props) {
 
         <div className="volume-games">
           <article>
-            <h3>Fish Catcher™</h3>
-            <p>Catch a licensed volume fish.</p>
+            <h3>{t.fishCatcher}</h3>
+            <p>{t.catchFish}</p>
             <div className="fish-tank">
               {fishVolumes.map((value, index) => (
                 <button key={value} type="button" style={{ '--fish-delay': `${index * -.47}s`, '--fish-speed': `${3.1 + index * .37}s` } as React.CSSProperties} onClick={() => {
-                  setVolume(value, `Caught a ${Math.round(value * 100)}% fish. It seems surprised.`)
-                  if (index === fishVolumes.length - 1) award('Master Baiter of Volume')
-                }} aria-label={`Set volume to ${Math.round(value * 100)} percent`}>🐟<span>{Math.round(value * 100)}%</span></button>
+                  setVolume(value, t.caughtFish(Math.round(value * 100)))
+                  if (index === fishVolumes.length - 1) award(t.fishAchievement)
+                }} aria-label={t.setVolume(Math.round(value * 100))}>🐟<span>{Math.round(value * 100)}%</span></button>
               ))}
             </div>
           </article>
 
           <article>
-            <h3>Bubble Inflation™</h3>
-            <p>Hold to inflate. Nothing bad will happen.</p>
+            <h3>{t.bubbleInflation}</h3>
+            <p>{t.inflateHint}</p>
             <div className={`inflation-zone ${popped ? 'is-popped' : ''}`}>
               <span className="volume-bubble" style={{ width: `${38 + inflate * .75}px`, height: `${38 + inflate * .75}px` }}>{popped ? 'POP' : `${Math.round(Math.min(SAFE_CAP, inflate / 100 * SAFE_CAP) * 100)}%`}</span>
-              <button type="button" onPointerDown={startInflating} onPointerUp={stopInflating} onPointerCancel={stopInflating} onPointerLeave={stopInflating}>Hold to inflate</button>
+              <button type="button" onPointerDown={startInflating} onPointerUp={stopInflating} onPointerCancel={stopInflating} onPointerLeave={stopInflating}>{t.holdInflate}</button>
             </div>
           </article>
         </div>
@@ -278,11 +281,11 @@ export function AquaPlayer({ onClose }: Props) {
       </div>
 
       {pauseDrama && (
-        <div className="player-dialog" role="dialog" aria-modal="true" aria-label="Emotional pause confirmation">
-          <div className="glass"><strong>Are you mad at me?</strong><p>The CD noticed you tried to pause it.</p><button onClick={() => confirmPause(true)}>No, you're perfect.</button><button onClick={() => confirmPause(false)}>It's not you, it's my ears.</button></div>
+        <div className="player-dialog" role="dialog" aria-modal="true" aria-label={t.pauseDialog}>
+          <div className="glass"><strong>{t.mad}</strong><p>{t.pauseNotice}</p><button onClick={() => confirmPause(true)}>{t.perfect}</button><button onClick={() => confirmPause(false)}>{t.ears}</button></div>
         </div>
       )}
-      {achievement && <div className="achievement-toast"><span>🏆 Pointless achievement</span><strong>{achievement}</strong></div>}
+      {achievement && <div className="achievement-toast"><span>{t.achievement}</span><strong>{achievement}</strong></div>}
     </section>
   )
 }
