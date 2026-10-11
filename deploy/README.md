@@ -28,6 +28,30 @@ Open the port in the cloud firewall (AWS Lightsail: instance -> Networking -> ad
 and attach a static IP so the backend's address doesn't change. The backend is then at
 `http://<static-ip>:8080`; set that as `VITE_API_URL` wherever the frontend is built.
 
+## Current setup: behind nginx at https://api.api-ggreat317.com/papertrade
+
+The server's nginx already serves Murmur at `https://api.api-ggreat317.com` (Let's Encrypt,
+managed by certbot). PaperTrade shares that domain and certificate under `/papertrade`:
+
+1. `deploy/.env`: `BACKEND_PORT=127.0.0.1:8080` (only nginx can reach the backend; no firewall port).
+2. In the nginx site for `api.api-ggreat317.com` (`grep -rl api.api-ggreat317.com /etc/nginx/`),
+   inside the `listen 443 ssl` server block, above `location / {`:
+   ```nginx
+   location /papertrade/ {
+           proxy_pass http://127.0.0.1:8080/;      # trailing slash strips /papertrade
+           proxy_http_version 1.1;
+           proxy_set_header Host $host;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+           proxy_read_timeout 60s;
+   }
+   ```
+3. `sudo nginx -t && sudo systemctl reload nginx` (always test first: a typo would also take Murmur down).
+4. The frontend's production build calls `https://api.api-ggreat317.com/papertrade`
+   (set in `frontend/.env.production`).
+
+Note: the interactive docs at `/papertrade/docs` don't load behind the prefix; the API itself is fine.
+
 ## Updating
 
 ```bash
