@@ -5,3 +5,4 @@ lightgbm==4.7.0
 # pyarrow 16 (pulled in by pandas) makes LightGBM crash with an access violation
 # on Windows if pandas is imported first. 26.0.0 is tested and fine either way.
 pyarrow>=26.0.0
+psycopg[binary]>=3.2   # saving models to the database (ml/store.py)

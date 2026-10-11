@@ -104,3 +104,36 @@ def get_candles(symbol, n=5000):
     df = df.tail(n).reset_index(drop=True)
     _cache[symbol] = (time.time(), df, source)
     return df, source
+
+
+_quotes = {}   # symbol -> (fetched_at, (price, ts_ms, source))
+QUOTE_SECONDS = 5
+
+
+def live_quote(symbol):
+    """Current price straight from the exchange APIs: (price, ts_ms, source), or None.
+
+    Used when the ingest feeds aren't writing ticks, so prices still move between
+    hourly candles. Cached for a few seconds so polling clients don't hammer the APIs.
+    Stocks and forex return the last trade, which stays put while their market is closed.
+    """
+    asset = _ASSETS.get(symbol)
+    if asset is None:
+        return None
+    hit = _quotes.get(symbol)
+    if hit and time.time() - hit[0] < QUOTE_SECONDS:
+        return hit[1]
+    try:
+        if asset["class"] == "crypto":
+            t = _get_json(f"https://api.exchange.coinbase.com/products/{asset['provider_symbol']}/ticker")
+            quote = (float(t["price"]), int(pd.Timestamp(t["time"]).timestamp() * 1000), "coinbase-live")
+        else:
+            ticker = f"{symbol}=X" if asset["class"] == "forex" else symbol
+            meta = _get_json(f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(ticker)}"
+                             "?interval=1m&range=1d")["chart"]["result"][0]["meta"]
+            quote = (float(meta["regularMarketPrice"]), int(meta["regularMarketTime"]) * 1000, "yahoo-live")
+    except Exception as e:
+        print(f"live_quote: {symbol} failed ({e})")
+        return None
+    _quotes[symbol] = (time.time(), quote)
+    return quote

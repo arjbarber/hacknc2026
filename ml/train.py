@@ -92,10 +92,11 @@ def train(candles, model_type="logreg", hyperparams=None, symbol="SOL", seed=0):
                             fee_bps=float(hp["fee_bps"]), candles_per_year=float(hp["candles_per_year"]))
 
     model_id = "m_" + uuid.uuid4().hex[:8]
-    _MODELS[model_id] = {"model": model, "symbol": symbol, "hp": hp, "candles": candles,
+    _MODELS[model_id] = {"model": model, "model_type": model_type, "symbol": symbol, "hp": hp,
+                         "candles": candles, "seed": seed,
                          "start_ts": int(ts.iloc[te[0]]), "trained_through_ts": int(candles["ts"].iloc[-1])}
 
-    return {
+    out = {
         "model_id": model_id,
         "start_ts": int(ts.iloc[te[0]]),   # first candle the model trades
         "trained_through_ts": int(candles["ts"].iloc[-1]),   # newest candle it had
@@ -112,6 +113,14 @@ def train(candles, model_type="logreg", hyperparams=None, symbol="SOL", seed=0):
                         for t, p in zip(ts.iloc[te], proba)],
         "train_seconds": round(time.perf_counter() - t0, 2),
     }
+    # Kept for saving to an account: the numbers a saved-model list shows without retraining.
+    curve = backtest["equity_curve"]
+    _MODELS[model_id]["summary"] = {
+        "metrics": out["metrics"],
+        "backtest": {k: v for k, v in backtest.items() if k != "equity_curve"},
+        "equity_preview": curve[::max(1, len(curve) // 100)],
+    }
+    return out
 
 
 def predict(model_id, candles=None):
