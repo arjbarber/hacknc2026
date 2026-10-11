@@ -6,24 +6,62 @@ import { DesktopReveal } from './components/desktop/DesktopReveal'
 import { PhoneStage } from './components/phone/PhoneStage'
 import type { PhoneHandle, PhoneReadyInfo, PhoneState } from './components/phone/Phone'
 import { GlossyButton } from './components/ui/GlossyButton'
+import { BrandMark } from './components/ui/BrandMark'
 import { useWowRecognition } from './hooks/useWowRecognition'
+import { translations, type Language } from './i18n'
 
 const DEBUG = new URLSearchParams(location.search).has('debug')
 
 export function App() {
   const phone = useRef<PhoneHandle>(null)
   const audioContext = useRef<AudioContext | null>(null)
+  const customCursor = useRef<HTMLDivElement>(null)
   const [state, setState] = useState<PhoneState>('closed')
   const [info, setInfo] = useState<PhoneReadyInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [voiceMessage, setVoiceMessage] = useState('say wow to enter ♡')
+  const [voiceMessageKey, setVoiceMessageKey] = useState<'sayWow' | 'opening' | 'wowOpening' | 'miss' | 'missThree'>('sayWow')
   const [revealed, setRevealed] = useState(false)
   const [shimmer, setShimmer] = useState(false)
+  const [language, setLanguage] = useState<Language>(() => localStorage.getItem('callmemaybe-language') === 'tr' ? 'tr' : 'en')
+  const t = translations[language]
   const { progress, active } = useProgress()
   const ready = info !== null
 
   useEffect(() => () => {
     if (audioContext.current?.state !== 'closed') void audioContext.current?.close()
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem('callmemaybe-language', language)
+    document.documentElement.lang = language
+  }, [language])
+
+  useEffect(() => {
+    const cursor = customCursor.current
+    if (!cursor || !window.matchMedia('(pointer: fine)').matches) return
+    let frame = 0
+    let x = window.innerWidth / 2
+    let y = window.innerHeight / 2
+    const render = () => {
+      // cursor.png points near its upper-left edge; align that tip to the click coordinate.
+      cursor.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-18%, -8%)`
+      frame = 0
+    }
+    const move = (event: PointerEvent) => {
+      x = event.clientX
+      y = event.clientY
+      const target = event.target as Element | null
+      cursor.classList.toggle('is-visible', !target?.closest('input, textarea, [contenteditable="true"]'))
+      if (!frame) frame = requestAnimationFrame(render)
+    }
+    const leave = () => cursor.classList.remove('is-visible')
+    window.addEventListener('pointermove', move)
+    document.documentElement.addEventListener('mouseleave', leave)
+    return () => {
+      window.removeEventListener('pointermove', move)
+      document.documentElement.removeEventListener('mouseleave', leave)
+      if (frame) cancelAnimationFrame(frame)
+    }
   }, [])
 
   const busy = state === 'opening' || state === 'closing'
@@ -58,7 +96,7 @@ export function App() {
 
   const enterAqua = useCallback(async (viaVoice = false) => {
     if (!phone.current || busy || revealed) return
-    setVoiceMessage(viaVoice ? 'WOW certified ✦ opening portal…' : 'opening portal…')
+    setVoiceMessageKey(viaVoice ? 'wowOpening' : 'opening')
     setShimmer(true)
     window.dispatchEvent(new Event('aqua-wow'))
     void playOpenChime()
@@ -69,10 +107,10 @@ export function App() {
 
   const { listen, status, supported, failure } = useWowRecognition({
     disabled: busy || revealed,
+    language,
+    t,
     onWow: () => void enterAqua(true),
-    onMiss: (attempts) => setVoiceMessage(attempts >= 3
-      ? 'The phone is beginning to question your enthusiasm.'
-      : 'That was insufficiently impressive. Try again.'),
+    onMiss: (attempts) => setVoiceMessageKey(attempts >= 3 ? 'missThree' : 'miss'),
   })
 
   const beginListening = useCallback(() => {
@@ -84,7 +122,7 @@ export function App() {
 
   const resetExperience = useCallback(async () => {
     setRevealed(false)
-    setVoiceMessage('say wow to enter ♡')
+    setVoiceMessageKey('sayWow')
     window.setTimeout(() => void phone.current?.close(), 500)
   }, [])
 
@@ -99,40 +137,44 @@ export function App() {
         onError={(e) => setError(e.message)}
       />
       </div>
-      <DesktopReveal visible={revealed} onReset={resetExperience} />
+      <DesktopReveal visible={revealed} onReset={resetExperience} language={language} t={t} />
       <div className={`portal-shimmer ${shimmer ? 'is-active' : ''}`} aria-hidden="true" />
 
       <div className="ui-layer">
         {/* Vista-style title bar */}
-        <header className="glass titlebar" style={{ position: 'absolute', top: 22, left: 22 }}>
+        <header className="glass titlebar" style={{ position: 'absolute', top: 22, left: 22 }} aria-label="CallMeMaybe">
           <span className="orbs" aria-hidden="true">
             <i className="orb" style={{ ['--c' as string]: '#8DECF1' }} />
             <i className="orb" style={{ ['--c' as string]: '#A5E8C3' }} />
             <i className="orb" style={{ ['--c' as string]: '#F4B8D4' }} />
           </span>
-          <h1 className="titlebar__name" style={{ margin: 0 }}>AQUA<em>.exe</em></h1>
+          <BrandMark className="brand-mark--header" />
         </header>
 
         <div className="holo-sticker" style={{ position: 'absolute', top: 30, right: 28 }}>★ HackNC 2026</div>
 
         {/* test controls for this milestone */}
         <div className={`entry-controls ${revealed ? 'is-hidden' : ''}`}>
-          <p className="entry-prompt" aria-live="polite">{voiceMessage}</p>
+          <div className="language-picker" role="group" aria-label={t.language}>
+            <button type="button" title="Switch to English" aria-pressed={language === 'en'} className={language === 'en' ? 'is-active' : ''} onClick={() => setLanguage('en')}>{t.english}</button>
+            <button type="button" title="Türkçeye geç" aria-pressed={language === 'tr'} className={language === 'tr' ? 'is-active' : ''} onClick={() => setLanguage('tr')}>{t.turkish}</button>
+          </div>
+          <p className="entry-prompt" aria-live="polite">{t[voiceMessageKey]}</p>
           <div className="entry-actions" style={{ pointerEvents: 'auto' }}>
             <GlossyButton className={`listen-btn ${status === 'listening' ? 'is-listening' : ''}`} icon={<Mic size={18} />} onClick={beginListening} disabled={!ready || busy || status === 'listening' || status === 'requesting'}>
-              {status === 'requesting' ? 'Requesting…' : status === 'listening' ? 'Listening…' : 'Use microphone'}
+              {status === 'requesting' ? t.requesting : status === 'listening' ? t.listening : t.mic}
             </GlossyButton>
             {isOpen ? (
               <GlossyButton variant="pink" icon={<RotateCcw size={18} />} onClick={resetExperience} disabled={!ready}>
-                Close phone
+                {t.closePhone}
               </GlossyButton>
             ) : (
               <GlossyButton variant="pink" icon={<PhoneIcon size={18} />} onClick={() => void enterAqua()} disabled={!ready || busy}>
-                Open phone
+                {t.openPhone}
               </GlossyButton>
             )}
           </div>
-          {!supported && <p className="voice-note">Voice recognition is unavailable in this browser — open in Chrome or use manual entry.</p>}
+          {!supported && <p className="voice-note">{t.unsupported}</p>}
           {failure && <p role="status" className="voice-note">{failure}</p>}
           {error && <p role="alert" className="tagline" style={{ color: '#b0225f' }}>⚠ {error}</p>}
         </div>
@@ -152,10 +194,11 @@ export function App() {
         <div style={{ textAlign: 'center' }}>
           <div className="loader__bubble" />
           <p className="tagline" style={{ marginTop: 18, fontSize: 18 }}>
-            {active ? `loading dream world… ${Math.round(progress)}%` : 'warming up the phone…'}
+            {active ? `${t.loading} ${Math.round(progress)}%` : t.warming}
           </p>
         </div>
       </div>
+      <div ref={customCursor} className="custom-cursor" aria-hidden="true" />
     </>
   )
 }

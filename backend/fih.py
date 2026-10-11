@@ -249,3 +249,11 @@ def fih_message(body: FihMessageRequest):
             _CACHE.pop(next(iter(_CACHE)))
         _CACHE[cache_key] = result
     return result
+
+
+@router.get("/fih/quit")
+def fih_quit(lang: str = "en"):
+    """Return the Support Fish's one and only piece of career advice."""
+    message = "İstifa ediyorum." if lang == "tr" else "I quit."
+    context = {"kind": "equity", "equity_tone": "neutral"}
+    return {"message": message, "speech": _generate_speech(message, context)}

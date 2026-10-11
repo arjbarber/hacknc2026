@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { Language, Translation } from '../i18n'
 
 type SpeechRecognitionEventLike = Event & {
   results: ArrayLike<{ 0: { transcript: string } }>
@@ -32,11 +33,13 @@ export type ListeningStatus = 'idle' | 'requesting' | 'listening' | 'unsupported
 
 interface Options {
   disabled?: boolean
+  language: Language
+  t: Translation
   onWow: () => void
   onMiss: (attempts: number) => void
 }
 
-export function useWowRecognition({ disabled, onWow, onMiss }: Options) {
+export function useWowRecognition({ disabled, language, t, onWow, onMiss }: Options) {
   const recognition = useRef<SpeechRecognitionLike | null>(null)
   const attempts = useRef(0)
   const [status, setStatus] = useState<ListeningStatus>('idle')
@@ -54,7 +57,7 @@ export function useWowRecognition({ disabled, onWow, onMiss }: Options) {
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!Recognition) {
       setStatus('unsupported')
-      setFailure('This browser does not provide speech recognition. Open the demo in Chrome or use manual entry.')
+      setFailure(t.unsupported)
       return
     }
 
@@ -63,13 +66,13 @@ export function useWowRecognition({ disabled, onWow, onMiss }: Options) {
     recognition.current = next
     next.continuous = false
     next.interimResults = false
-    next.lang = 'en-US'
+    next.lang = language === 'tr' ? 'tr-TR' : 'en-US'
     setFailure(null)
     next.onstart = () => setStatus('listening')
     next.onresult = (event) => {
-      const transcript = Array.from(event.results).map((result) => result[0]?.transcript ?? '').join(' ').toLowerCase()
-      const normalized = transcript.replace(/[^a-z]/g, '')
-      if (/wo+w+/.test(normalized) || normalized.includes('wow')) {
+      const transcript = Array.from(event.results).map((result) => result[0]?.transcript ?? '').join(' ').toLocaleLowerCase(language === 'tr' ? 'tr-TR' : 'en-US')
+      const normalized = transcript.normalize('NFD').replace(/[^a-z]/g, '')
+      if (/wo+w+/.test(normalized) || normalized.includes('wow') || (language === 'tr' && normalized.includes('vay'))) {
         attempts.current = 0
         onWow()
       } else {
@@ -81,13 +84,13 @@ export function useWowRecognition({ disabled, onWow, onMiss }: Options) {
       const denied = event.error === 'not-allowed' || event.error === 'service-not-allowed'
       setStatus(denied ? 'denied' : 'idle')
       const messages: Record<string, string> = {
-        'not-allowed': 'Microphone permission was declined. Allow it in site settings or use manual entry.',
-        'service-not-allowed': 'Speech recognition is blocked by this browser. Use Chrome or manual entry.',
-        'audio-capture': 'No working microphone was found. Check your input device and try again.',
-        'no-speech': 'I heard only mysterious ocean silence. Try saying “wow” again.',
-        network: 'Speech recognition could not reach its service. Manual entry still works offline.',
+        'not-allowed': t.micDenied,
+        'service-not-allowed': t.speechBlocked,
+        'audio-capture': t.noMic,
+        'no-speech': t.noSpeech,
+        network: t.speechNetwork,
       }
-      setFailure(messages[event.error] ?? `Speech recognition stopped (${event.error}). Manual entry still works.`)
+      setFailure(messages[event.error] ?? t.speechStopped(event.error))
     }
     next.onend = () => {
       recognition.current = null
@@ -98,11 +101,16 @@ export function useWowRecognition({ disabled, onWow, onMiss }: Options) {
       next.start()
     } catch {
       setStatus('idle')
-      setFailure('The microphone is already busy. Wait a moment and try again.')
+      setFailure(t.micBusy)
     }
-  }, [disabled, onMiss, onWow])
+  }, [disabled, language, onMiss, onWow, t])
 
   useEffect(() => stop, [stop])
+  useEffect(() => {
+    stop()
+    attempts.current = 0
+    setFailure(null)
+  }, [language, stop])
 
   return { listen, stop, status, supported, failure }
 }
