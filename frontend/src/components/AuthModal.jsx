@@ -21,7 +21,13 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }) {
       const redirectUri = window.location.origin
       const res = await api.googleUrl(redirectUri)
       if (res?.url) {
-        window.location.href = res.url
+        // Guarantee clean implicit OAuth flow so Supabase redirects back with #access_token=...
+        // This ensures authentication works immediately on any deployment (including Vercel)
+        // without requiring backend PKCE state synchronization.
+        const authUrl = new URL(res.url)
+        authUrl.searchParams.delete('code_challenge')
+        authUrl.searchParams.delete('code_challenge_method')
+        window.location.href = authUrl.toString()
       } else {
         throw new Error('No Google authentication URL returned.')
       }
