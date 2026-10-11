@@ -92,8 +92,13 @@ function liveRecord(overlay, candles) {
 // falls below 5% of their value.
 const LEVERAGE_CHOICES = [1, 2, 3, 5, 10]
 const MAINTENANCE_MARGIN = 0.05
-// Liquidation price of a fresh position opened at `price` with `leverage`.
-const liquidationPriceAt = (price, leverage) => leverage > 1 ? price * (1 - 1 / leverage) / (1 - MAINTENANCE_MARGIN) : null
+// Liquidation price of a fresh position opened at `price` with `leverage`: below the price for
+// a long (none at 1x), above it for a short.
+const liquidationPriceAt = (price, leverage, short = false) => short
+  ? price * (1 + 1 / leverage) / (1 + MAINTENANCE_MARGIN)
+  : leverage > 1 ? price * (1 - 1 / leverage) / (1 - MAINTENANCE_MARGIN) : null
+// Shares column: "Short 10" for a short position.
+const sharesLabel = (qty) => qty < 0 ? `Short ${Math.abs(qty).toLocaleString('en-US')}` : Number(qty).toLocaleString('en-US')
 
 // Enough decimals for sub-cent coins (BONK) and forex.
 const priceDigits = (candles, type) => {
@@ -204,6 +209,9 @@ function App() {
   const openPositions = portfolio?.positions || []
   const buyingPower = portfolio?.cash ?? null
   const heldQty = openPositions.find((position) => position.symbol === selectedSymbol)?.qty || 0
+  // What the ticket does right now: open/add long, reduce long, open/add short, or cover a short.
+  const orderMode = side === 'buy' ? (heldQty < 0 ? 'cover' : 'long') : (heldQty > 0 ? 'reduce' : 'short')
+  const opensPosition = orderMode === 'long' || orderMode === 'short'
   const savedModels = trainedModels.filter((model) => model.saved)
   const currentModel = trainingResult && trainedModels.find((model) => model.id === trainingResult.model_id)
   const holdingsValue = portfolio ? portfolio.equity - portfolio.cash : null
@@ -533,7 +541,8 @@ function App() {
   // Fill the quantity with everything you can afford (buy) or everything you hold (sell).
   function fillMax() {
     quantityInteractionRef.current = true
-    if (side === 'sell') { setQuantity(String(heldQty)); return }
+    if (orderMode === 'reduce') { setQuantity(String(heldQty)); return }
+    if (orderMode === 'cover') { setQuantity(String(-heldQty)); return }
     if (!quote || buyingPower === null) return
     setQuantity(String(Math.floor(buyingPower * leverage / quote.price * 1e6) / 1e6))
   }
@@ -566,17 +575,19 @@ function App() {
     const amount = Number(quantity)
     if (!Number.isFinite(amount) || amount <= 0) { setOrderMessage('Enter a quantity greater than zero.'); return }
     if (!quote) { setOrderMessage('Waiting for a price before placing an order.'); return }
-    if (side === 'sell' && amount > heldQty + 1e-9) { setOrderMessage(heldQty ? `You hold ${heldQty} ${selectedSymbol}.` : `You don't hold any ${selectedSymbol}.`); return }
-    const margin = amount * quote.price / (side === 'buy' ? leverage : 1)
-    if (side === 'buy' && buyingPower !== null && margin > buyingPower) { setOrderMessage(`That needs ${money(margin)} of cash${leverage > 1 ? ` at ${leverage}×` : ''}; you have ${money(buyingPower)}.`); return }
+    if (orderMode === 'reduce' && amount > heldQty + 1e-9) { setOrderMessage(`You hold ${heldQty} ${selectedSymbol}. Sell those first, then sell again to go short.`); return }
+    if (orderMode === 'cover' && amount > -heldQty + 1e-9) { setOrderMessage(`You're short ${-heldQty} ${selectedSymbol}. Buy ${-heldQty} to cover it first, then buy again to go long.`); return }
+    const margin = amount * quote.price / (opensPosition ? leverage : 1)
+    if (opensPosition && buyingPower !== null && margin > buyingPower) { setOrderMessage(`That needs ${money(margin)} of cash${leverage > 1 ? ` at ${leverage}×` : ''}; you have ${money(buyingPower)}.`); return }
     setOrderLoading(true)
     setOrderMessage('')
     try {
-  const result = await api.order({ user_id: activeUserId, symbol: selectedSymbol, side, qty: amount, leverage: side === 'buy' ? leverage : 1 })
+  const result = await api.order({ user_id: activeUserId, symbol: selectedSymbol, side, qty: amount, leverage: opensPosition ? leverage : 1 })
       fihRequestRef.current.controller?.abort()
       fihRequestRef.current = { id: fihRequestRef.current.id + 1, controller: null }
       quantityInteractionRef.current = false
-      setOrderMessage(`${side === 'buy' ? 'Bought' : 'Sold'} ${amount} ${selectedSymbol} at ${fmtPrice(result.fill_price)}${result.leverage > 1 ? ` with ${result.leverage}× leverage (${money(amount * result.fill_price / result.leverage)} of your cash)` : ''}.`)
+      const verb = { long: 'Bought', reduce: 'Sold', short: 'Sold short', cover: 'Bought back' }[orderMode]
+      setOrderMessage(`${verb} ${amount} ${selectedSymbol} at ${fmtPrice(result.fill_price)}${orderMode === 'cover' ? ' to cover your short' : ''}${result.leverage > 1 ? ` with ${result.leverage}× leverage (${money(amount * result.fill_price / result.leverage)} of your cash)` : ''}.`)
       suppressEquityReactionRef.current = true
       const updatedPortfolio = await refreshPortfolio()
       if (updatedPortfolio) {
@@ -790,17 +801,19 @@ function App() {
                 <form className="order-form" onSubmit={placeOrder}>
                   <label htmlFor="order-qty">Quantity <span>fractional allowed</span></label>
                   <input id="order-qty" type="number" min="0.000001" step="any" value={quantity} onChange={(event) => { quantityInteractionRef.current = true; setQuantity(event.target.value) }} />
-                  <button className="text-action" type="button" onClick={fillMax} disabled={side === 'sell' ? !heldQty : !quote || buyingPower === null}>{side === 'buy' ? 'Max affordable' : 'Sell all'} <span>↗</span></button>
-                  <div className="order-estimate"><span>You own</span><b>{heldQty.toLocaleString('en-US', { maximumFractionDigits: 6 })} {selectedSymbol}</b></div>
-                  {side === 'buy' && <div className="order-estimate"><span>Leverage</span><span className="leverage-choices" role="group" aria-label="Leverage">{LEVERAGE_CHOICES.map((x) => <button key={x} type="button" className={leverage === x ? 'leverage-active' : ''} aria-pressed={leverage === x} onClick={() => setLeverage(x)}>{x}×</button>)}</span></div>}
+                  <button className="text-action" type="button" onClick={fillMax} disabled={opensPosition && (!quote || buyingPower === null)}>{{ long: 'Max affordable', reduce: 'Sell all', short: 'Max short', cover: 'Cover all' }[orderMode]} <span>↗</span></button>
+                  <div className="order-estimate"><span>{heldQty < 0 ? "You're short" : 'You own'}</span><b>{Math.abs(heldQty).toLocaleString('en-US', { maximumFractionDigits: 6 })} {selectedSymbol}</b></div>
+                  {opensPosition && <div className="order-estimate"><span>Leverage</span><span className="leverage-choices" role="group" aria-label="Leverage">{LEVERAGE_CHOICES.map((x) => <button key={x} type="button" className={leverage === x ? 'leverage-active' : ''} aria-pressed={leverage === x} onClick={() => setLeverage(x)}>{x}×</button>)}</span></div>}
                   <div className="order-estimate"><span>Asset</span><b>{selectedSymbol}</b></div><div className="order-estimate"><span>Last price</span><b>{quote ? fmtPrice(quote.price) : '—'}</b></div>
-                  {side === 'buy' && leverage > 1 && quote ? <>
+                  {quote && (orderMode === 'short' || (orderMode === 'long' && leverage > 1)) ? <>
                     <div className="order-estimate"><span>Position size</span><b>{money(Number(quantity || 0) * quote.price)}</b></div>
-                    <div className="order-estimate"><span>Liquidates near</span><b className="negative">{fmtPrice(liquidationPriceAt(quote.price, leverage))}</b></div>
-                    <div className="order-estimate estimate-total"><span>Your cost ({leverage}×)</span><b>{money(Number(quantity || 0) * quote.price / leverage)}</b></div>
-                    <p className="leverage-note">Borrowing {money(Number(quantity || 0) * quote.price * (1 - 1 / leverage))}. Gains and losses are {leverage}× larger; a {(100 * (1 - liquidationPriceAt(quote.price, leverage) / quote.price)).toFixed(1)}% drop sells it automatically.</p>
-                  </> : <div className="order-estimate estimate-total"><span>Estimated total</span><b>{quote ? money(Number(quantity || 0) * quote.price) : '—'}</b></div>}
-                  <button className={`place-order ${side === 'sell' ? 'place-sell' : ''}`} type="submit" disabled={orderLoading || !quote}>{orderLoading ? 'Submitting order…' : `${side === 'buy' ? 'Buy' : 'Sell'} ${selectedSymbol}`}<span>↗</span></button>
+                    <div className="order-estimate"><span>Liquidates near</span><b className="negative">{fmtPrice(liquidationPriceAt(quote.price, leverage, orderMode === 'short'))}</b></div>
+                    <div className="order-estimate estimate-total"><span>Your cost{leverage > 1 ? ` (${leverage}×)` : ''}</span><b>{money(Number(quantity || 0) * quote.price / leverage)}</b></div>
+                    {orderMode === 'short'
+                      ? <p className="leverage-note">Short: you sell borrowed {selectedSymbol} and profit if the price falls. Losses grow as it rises{leverage > 1 ? ` (${leverage}× faster)` : ''}; a {(100 * (liquidationPriceAt(quote.price, leverage, true) / quote.price - 1)).toFixed(1)}% rise buys it back automatically.</p>
+                      : <p className="leverage-note">Borrowing {money(Number(quantity || 0) * quote.price * (1 - 1 / leverage))}. Gains and losses are {leverage}× larger; a {(100 * (1 - liquidationPriceAt(quote.price, leverage) / quote.price)).toFixed(1)}% drop sells it automatically.</p>}
+                  </> : <div className="order-estimate estimate-total"><span>{orderMode === 'cover' ? 'Cost to buy back' : 'Estimated total'}</span><b>{quote ? money(Number(quantity || 0) * quote.price) : '—'}</b></div>}
+                  <button className={`place-order ${side === 'sell' ? 'place-sell' : ''}`} type="submit" disabled={orderLoading || !quote}>{orderLoading ? 'Submitting order…' : { long: `Buy ${selectedSymbol}`, reduce: `Sell ${selectedSymbol}`, short: `Sell ${selectedSymbol} short`, cover: `Buy to cover ${selectedSymbol}` }[orderMode]}<span>↗</span></button>
                   <p className="order-feedback" aria-live="polite">{orderMessage || (portfolioLoading ? 'Loading buying power…' : portfolioError || `Buying power ${buyingPower === null ? '—' : money(buyingPower)}`)}</p>
                 </form>
               </section>
@@ -808,7 +821,7 @@ function App() {
               <section className="glass-panel positions-panel">
                 <div className="section-heading"><div><p className="kicker">ACCOUNT HOLDINGS</p><h2>Your positions</h2></div><button className="text-action" type="button" onClick={() => setPage('portfolio')}>View portfolio <span>↗</span></button></div>
                 <StatusMessage loading={portfolioLoading} error={portfolioError} empty={!openPositions.length && portfolio ? 'No open positions yet. Place an order to begin.' : null}>
-                  <div className="table-scroll"><table><thead><tr><th>Asset</th><th>Shares</th><th>Leverage</th><th>Avg. cost</th><th>Market value</th><th>Unrealized P/L</th></tr></thead><tbody>{openPositions.map((position) => <tr key={position.symbol}><td><button className="table-asset" type="button" onClick={() => { selectAsset(position.symbol); setPage('trade') }}><span className="asset-token">{position.symbol.slice(0, 1)}</span><b>{position.symbol}</b></button></td><td>{Number(position.qty).toLocaleString('en-US')}</td><td>{position.borrowed > 0 ? `${position.leverage ?? '—'}×` : '1×'}</td><td>{fmtPrice(position.avg_price)}</td><td>{money(position.last_price * position.qty)}</td><td className={position.unrealized_pnl >= 0 ? 'positive' : 'negative'}>{position.unrealized_pnl >= 0 ? '+' : ''}{money(position.unrealized_pnl)}</td></tr>)}</tbody></table></div>
+                  <div className="table-scroll"><table><thead><tr><th>Asset</th><th>Shares</th><th>Leverage</th><th>Avg. cost</th><th>Market value</th><th>Unrealized P/L</th></tr></thead><tbody>{openPositions.map((position) => <tr key={position.symbol}><td><button className="table-asset" type="button" onClick={() => { selectAsset(position.symbol); setPage('trade') }}><span className="asset-token">{position.symbol.slice(0, 1)}</span><b>{position.symbol}</b></button></td><td>{sharesLabel(position.qty)}</td><td>{position.borrowed !== 0 ? `${position.leverage ?? '—'}×` : '1×'}</td><td>{fmtPrice(position.avg_price)}</td><td>{money(position.last_price * position.qty)}</td><td className={position.unrealized_pnl >= 0 ? 'positive' : 'negative'}>{position.unrealized_pnl >= 0 ? '+' : ''}{money(position.unrealized_pnl)}</td></tr>)}</tbody></table></div>
                 </StatusMessage>
               </section>
               <FihViewer message={fihMessage} speech={fihSpeech} />
@@ -844,7 +857,7 @@ function App() {
           {page === 'portfolio' && <>
             <div className="page-title-row"><div><p className="kicker">YOUR PAPER ACCOUNT</p><h1>Portfolio</h1><p className="page-subtitle">Balances and positions are read directly from your backend account.</p></div><button className="secondary-action" type="button" onClick={refreshPortfolio} disabled={portfolioLoading}>{portfolioLoading ? 'Refreshing…' : 'Refresh account'}↻</button></div>
             <section className="summary-strip portfolio-summary"><div className="summary-cell"><span>Account equity</span><strong>{portfolio ? money(portfolio.equity) : '—'}</strong><small>Total account value</small></div><div className="summary-cell"><span>Cash balance</span><strong>{portfolio ? money(portfolio.cash) : '—'}</strong><small>Available buying power</small></div><div className="summary-cell"><span>Total return</span><strong className={portfolio?.pnl >= 0 ? 'positive' : 'negative'}>{portfolio ? `${portfolio.pnl >= 0 ? '+' : ''}${money(portfolio.pnl)}` : '—'}</strong><small>{portfolio ? percent(portfolio.pnl_pct, true) : 'Since account start'}</small></div></section>
-            <section className="glass-panel full-positions"><div className="section-heading"><div><p className="kicker">MARK-TO-MARKET</p><h2>Open positions</h2></div><span className="muted-label">{openPositions.length} assets</span></div><StatusMessage loading={portfolioLoading} error={portfolioError} empty={!openPositions.length && portfolio ? 'No open positions in this account.' : null}><div className="table-scroll"><table><thead><tr><th>Asset</th><th>Quantity</th><th>Leverage</th><th>Average price</th><th>Last price</th><th>Liq. price</th><th>Market value</th><th>Unrealized P/L</th></tr></thead><tbody>{openPositions.map((position) => <tr key={position.symbol}><td><button className="table-asset" type="button" onClick={() => { selectAsset(position.symbol); setPage('trade') }}><span className="asset-token">{position.symbol.slice(0, 1)}</span><b>{position.symbol}</b></button></td><td>{Number(position.qty).toLocaleString('en-US')}</td><td>{position.borrowed > 0 ? `${position.leverage ?? '—'}×` : '1×'}</td><td>{fmtPrice(position.avg_price)}</td><td>{fmtPrice(position.last_price)}</td><td className={position.liquidation_price ? 'negative' : ''}>{position.liquidation_price ? fmtPrice(position.liquidation_price) : '—'}</td><td>{money(position.last_price * position.qty)}</td><td className={position.unrealized_pnl >= 0 ? 'positive' : 'negative'}>{position.unrealized_pnl >= 0 ? '+' : ''}{money(position.unrealized_pnl)}</td></tr>)}</tbody></table></div></StatusMessage></section>
+            <section className="glass-panel full-positions"><div className="section-heading"><div><p className="kicker">MARK-TO-MARKET</p><h2>Open positions</h2></div><span className="muted-label">{openPositions.length} assets</span></div><StatusMessage loading={portfolioLoading} error={portfolioError} empty={!openPositions.length && portfolio ? 'No open positions in this account.' : null}><div className="table-scroll"><table><thead><tr><th>Asset</th><th>Quantity</th><th>Leverage</th><th>Average price</th><th>Last price</th><th>Liq. price</th><th>Market value</th><th>Unrealized P/L</th></tr></thead><tbody>{openPositions.map((position) => <tr key={position.symbol}><td><button className="table-asset" type="button" onClick={() => { selectAsset(position.symbol); setPage('trade') }}><span className="asset-token">{position.symbol.slice(0, 1)}</span><b>{position.symbol}</b></button></td><td>{sharesLabel(position.qty)}</td><td>{position.borrowed !== 0 ? `${position.leverage ?? '—'}×` : '1×'}</td><td>{fmtPrice(position.avg_price)}</td><td>{fmtPrice(position.last_price)}</td><td className={position.liquidation_price ? 'negative' : ''}>{position.liquidation_price ? fmtPrice(position.liquidation_price) : '—'}</td><td>{money(position.last_price * position.qty)}</td><td className={position.unrealized_pnl >= 0 ? 'positive' : 'negative'}>{position.unrealized_pnl >= 0 ? '+' : ''}{money(position.unrealized_pnl)}</td></tr>)}</tbody></table></div></StatusMessage></section>
             <section className="glass-panel receipts-panel"><div className="section-heading"><div><p className="kicker">ORDER HISTORY</p><h2>Recent orders</h2></div><span className="muted-label">Every order on this account</span></div><StatusMessage loading={portfolioLoading && !orders.length} error={ordersError} empty={!orders.length ? 'No orders yet. Place one from the Trade page.' : null}><div className="receipt-list">{orders.map((order) => <div className="receipt-row" key={order.order_id}><span className={`receipt-side ${order.side}`}>{order.side.toUpperCase()}</span><b>{order.symbol}</b><span>{order.qty} units{order.leverage > 1 ? ` · ${order.leverage}×` : ''}</span><span>{fmtPrice(order.fill_price)}</span><span>{order.status}</span><time>{new Date(order.ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</time></div>)}</div></StatusMessage></section>
           </>}
           <footer className="page-footer"><span>AERORITHMETIC <b>·</b> MAKE CENTS OF THE FUTURE.</span><span>Practice only. Not investment advice.</span></footer>

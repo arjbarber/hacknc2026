@@ -154,8 +154,6 @@ def order(body: dict, auth_user: dict | None = Depends(get_optional_user)):
     if leverage not in LEVERAGE_CHOICES:
         choices = ", ".join(f"{x}x" for x in LEVERAGE_CHOICES)
         raise HTTPException(status_code=400, detail=f"Leverage must be one of {choices}")
-    if side == "sell":
-        leverage = 1.0   # sells close (part of) a position; leverage only applies when opening
     require_db()
 
     order_id = "o_" + str(uuid.uuid4())[:8]
@@ -182,34 +180,48 @@ def order(body: dict, auth_user: dict | None = Depends(get_optional_user)):
             pres = cur.fetchone()
 
             notional = price * qty
-            if side == "buy":
-                margin = notional / leverage          # what this costs in cash
-                borrow = notional - margin            # the rest is borrowed
-                if cash < margin:
-                    at = f" at {leverage:g}x" if leverage > 1 else ""
-                    raise HTTPException(status_code=400, detail=f"Insufficient funds: this needs {margin:,.2f} of cash{at} and you have {cash:,.2f}")
+            held, avg, borrowed = pres if pres else (0.0, 0.0, 0.0)
+            # Four cases: open/add long, reduce long, open/add short, cover short.
+            # Leverage only applies when opening or adding; reducing/covering is 1x.
+            opening = (side == "buy" and held >= -1e-9) or (side == "sell" and held <= 1e-9)
+            if not opening:
+                leverage = 1.0
+            margin = notional / leverage
+            at = f" at {leverage:g}x" if leverage > 1 else ""
+            if opening and cash < margin:
+                raise HTTPException(status_code=400, detail=f"Insufficient funds: this needs {margin:,.2f} of cash{at} and you have {cash:,.2f}")
+
+            if side == "buy" and opening:              # open/add long: margin from cash, rest borrowed
                 cash_after = cash - margin
-                if not pres:
-                    cur.execute("INSERT INTO positions (user_id, symbol, qty, avg_price, borrowed) VALUES (%s, %s, %s, %s, %s)",
-                                (user_id, symbol, qty, price, borrow))
-                else:
-                    old_qty, old_avg, old_borrowed = pres
-                    new_qty = old_qty + qty
-                    new_avg = ((old_qty * old_avg) + (qty * price)) / new_qty
-                    cur.execute("UPDATE positions SET qty = %s, avg_price = %s, borrowed = %s WHERE user_id = %s AND symbol = %s",
-                                (new_qty, new_avg, old_borrowed + borrow, user_id, symbol))
-            else:
-                held, _, borrowed = pres if pres else (0.0, 0.0, 0.0)
-                if held < qty - 1e-9:
-                    raise HTTPException(status_code=400, detail=f"Insufficient position: you hold {held:g} {symbol}")
-                repay = borrowed * min(1.0, qty / held)   # this sale's share of the debt
+                new_qty, new_borrowed = held + qty, borrowed + (notional - margin)
+                new_avg = (held * avg + qty * price) / new_qty
+            elif side == "sell" and not opening:       # reduce long: repay this sale's share of the debt
+                if qty > held + 1e-9:
+                    raise HTTPException(status_code=400, detail=f"You hold {held:g} {symbol}. Sell those first, then sell again to go short.")
+                repay = borrowed * min(1.0, qty / held)
                 cash_after = cash + notional - repay
-                new_qty = held - qty
-                if new_qty <= 1e-9:
-                    cur.execute("DELETE FROM positions WHERE user_id = %s AND symbol = %s", (user_id, symbol))
-                else:
-                    cur.execute("UPDATE positions SET qty = %s, borrowed = %s WHERE user_id = %s AND symbol = %s",
-                                (new_qty, borrowed - repay, user_id, symbol))
+                new_qty, new_borrowed, new_avg = held - qty, borrowed - repay, avg
+            elif side == "sell":                       # open/add short: post margin, hold proceeds as collateral
+                cash_after = cash - margin
+                short = -held
+                new_qty, new_borrowed = held - qty, borrowed - (notional + margin)
+                new_avg = (short * avg + qty * price) / (short + qty)
+            else:                                      # cover short: release collateral, pay to buy back
+                short = -held
+                if qty > short + 1e-9:
+                    raise HTTPException(status_code=400, detail=f"You're short {short:g} {symbol}. Buy {short:g} to cover it first, then buy again to go long.")
+                release = -borrowed * min(1.0, qty / short)
+                cash_after = cash + release - notional
+                new_qty, new_borrowed, new_avg = held + qty, borrowed + release, avg
+
+            if abs(new_qty) <= 1e-9:
+                cur.execute("DELETE FROM positions WHERE user_id = %s AND symbol = %s", (user_id, symbol))
+            elif pres:
+                cur.execute("UPDATE positions SET qty = %s, avg_price = %s, borrowed = %s WHERE user_id = %s AND symbol = %s",
+                            (new_qty, new_avg, new_borrowed, user_id, symbol))
+            else:
+                cur.execute("INSERT INTO positions (user_id, symbol, qty, avg_price, borrowed) VALUES (%s, %s, %s, %s, %s)",
+                            (user_id, symbol, new_qty, new_avg, new_borrowed))
 
             cur.execute("UPDATE users SET cash = %s WHERE id = %s", (cash_after, user_id))
             cur.execute("INSERT INTO orders (id, user_id, symbol, side, qty, fill_price, leverage) VALUES (%s, %s, %s, %s, %s, %s, %s)",
@@ -245,19 +257,24 @@ def _price_of(cur, symbol, prices):
 
 
 def liquidation_price(qty, borrowed):
-    """Price at which a leveraged position's equity hits the maintenance margin."""
-    return borrowed / (qty * (1 - MAINTENANCE_MARGIN)) if borrowed > 0 and qty > 0 else None
+    """Price at which a position's equity hits the maintenance margin: below it for a
+    leveraged long, above it for a short. None for an unleveraged long."""
+    if qty > 0 and borrowed > 0:
+        return borrowed / (qty * (1 - MAINTENANCE_MARGIN))
+    if qty < 0 and borrowed < 0:
+        return borrowed / (qty * (1 + MAINTENANCE_MARGIN))
+    return None
 
 
 def _liquidate(cur, user_id, prices):
-    """Sell, at market, any leveraged position whose equity (value - borrowed) is below
-    MAINTENANCE_MARGIN of its value. Repays the debt, credits what's left, and records
-    a 'liquidated' sell order. Runs inside the caller's transaction."""
-    cur.execute("SELECT symbol, qty, borrowed FROM positions WHERE user_id = %s AND borrowed > 0 FOR UPDATE", (user_id,))
+    """Close, at market, any leveraged long or short whose equity (value - borrowed) is below
+    MAINTENANCE_MARGIN of its value: sells a long / buys back a short, settles the debt or
+    collateral, and records a 'liquidated' order. Runs inside the caller's transaction."""
+    cur.execute("SELECT symbol, qty, borrowed FROM positions WHERE user_id = %s AND borrowed <> 0 FOR UPDATE", (user_id,))
     to_close = []
     for symbol, qty, borrowed in cur.fetchall():
         price = _price_of(cur, symbol, prices)
-        if price is not None and qty * price - borrowed < MAINTENANCE_MARGIN * qty * price:
+        if price is not None and qty * price - borrowed < MAINTENANCE_MARGIN * abs(qty * price):
             to_close.append((symbol, qty, borrowed, price))
     if not to_close:
         return
@@ -267,8 +284,8 @@ def _liquidate(cur, user_id, prices):
         cash += qty * price - borrowed
         cur.execute("DELETE FROM positions WHERE user_id = %s AND symbol = %s", (user_id, symbol))
         cur.execute("INSERT INTO orders (id, user_id, symbol, side, qty, fill_price, status, leverage) "
-                    "VALUES (%s, %s, %s, 'sell', %s, %s, 'liquidated', 1)",
-                    ("o_" + str(uuid.uuid4())[:8], user_id, symbol, qty, price))
+                    "VALUES (%s, %s, %s, %s, %s, %s, 'liquidated', 1)",
+                    ("o_" + str(uuid.uuid4())[:8], user_id, symbol, "sell" if qty > 0 else "buy", abs(qty), price))
     cur.execute("UPDATE users SET cash = %s WHERE id = %s", (cash, user_id))
 
 
@@ -286,9 +303,10 @@ def _account(cur, user_id, prices):
         value = last_price * qty
         equity += value - borrowed
         positions.append({"symbol": symbol, "qty": qty, "avg_price": avg_price, "last_price": last_price,
-                          "unrealized_pnl": (last_price - avg_price) * qty,
+                          "unrealized_pnl": (last_price - avg_price) * qty + 0.0,   # + 0.0 turns -0.0 into 0.0
                           "borrowed": borrowed, "position_equity": value - borrowed,
-                          "leverage": round(value / (value - borrowed), 2) if value - borrowed > 0 else None,
+                          "side": "long" if qty > 0 else "short",
+                          "leverage": round(abs(value) / (value - borrowed), 2) if value - borrowed > 0 else None,
                           "liquidation_price": liquidation_price(qty, borrowed)})
     return cash, positions, equity
 

@@ -28,7 +28,12 @@ leverage (buys only; 1, 2, 3, 5 or 10, default 1): the buy costs qty*price/lever
 the rest is borrowed. Sells repay their share of the debt. A leveraged position is liquidated
 (sold at market, recorded as a sell with status "liquidated") once its equity (value - borrowed)
 drops below 5% of its value; this is checked on every order and account/leaderboard read.
-GET /portfolio positions also carry "borrowed", "position_equity", "leverage" and
+Short selling: a sell with no long position held opens (or adds to) a short, and a buy while
+short covers it. Leverage applies when opening either side. One order can't flip a position:
+selling more than a long, or buying more than a short, is a 400 (close it first). A short is
+stored as negative qty and negative "borrowed" (-(sale proceeds + margin), held as collateral);
+its liquidation price is above the entry, and liquidating it records a 'liquidated' buy.
+GET /portfolio positions also carry "side" (long/short), "borrowed", "position_equity", "leverage" and
 "liquidation_price"; equity = cash + sum(value - borrowed). Orders carry "leverage".
 
 GET /orders/{user_id}?limit=50   (newest first)
