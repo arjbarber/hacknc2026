@@ -6,19 +6,28 @@ import uuid
 from pathlib import Path
 
 import psycopg
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 from ml.api import router as ml_router
 from ml.history import get_candles, live_quote
 
+try:
+    from backend.auth import router as auth_router, get_current_user, get_optional_user
+except ImportError:
+    from auth import router as auth_router, get_current_user, get_optional_user
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 load_dotenv()
 DB_URL = os.getenv("TIGER_DATABASE_URL")
 
-app = FastAPI()
+app = FastAPI(title="Aerorithmetic Trading API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])  # lets Next.js call it
+
+# Auth routes (/auth/signup, /auth/login, /auth/logout, /auth/me, /auth/refresh, etc.)
+app.include_router(auth_router)
 
 # Model routes (/models/train, /models/{id}/predict, /models/{id}/overlay, /history/{symbol})
 # come from the ML package, trained on real hourly history.
@@ -110,8 +119,8 @@ def candles(symbol: str, interval: str = "1h", limit: int = 200):
 
 
 @app.post("/orders")
-def order(body: dict):
-    user_id = body.get("user_id")
+def order(body: dict, auth_user: dict | None = Depends(get_optional_user)):
+    user_id = body.get("user_id") or (auth_user["id"] if auth_user else None)
     symbol = body.get("symbol")
     side = body.get("side")
     try:
@@ -141,8 +150,9 @@ def order(body: dict):
 
             # Create the account on first trade, then lock its row so two orders
             # at once can't spend the same cash.
+            display_name = (auth_user.get("name") if auth_user else None) or user_id
             cur.execute("INSERT INTO users (id, name, cash) VALUES (%s, %s, %s) ON CONFLICT (id) DO NOTHING",
-                        (user_id, user_id, START_CASH))
+                        (user_id, display_name, START_CASH))
             cur.execute("SELECT cash FROM users WHERE id = %s FOR UPDATE", (user_id,))
             cash = cur.fetchone()[0]
             cur.execute("SELECT qty, avg_price FROM positions WHERE user_id = %s AND symbol = %s FOR UPDATE",
@@ -181,6 +191,11 @@ def order(body: dict):
             "fill_price": price, "ts": ts_ms, "cash_after": cash_after}
 
 
+@app.get("/orders/me")
+def my_orders(limit: int = 50, user: dict = Depends(get_current_user)):
+    return order_history(user["id"], limit=limit)
+
+
 @app.get("/orders/{user_id}")
 def order_history(user_id: str, limit: int = 50):
     require_db()
@@ -205,6 +220,11 @@ def _account(cur, user_id, cash, prices):
         positions.append({"symbol": symbol, "qty": qty, "avg_price": avg_price, "last_price": last_price,
                           "unrealized_pnl": (last_price - avg_price) * qty})
     return positions, equity
+
+
+@app.get("/portfolio/me")
+def my_portfolio(user: dict = Depends(get_current_user)):
+    return portfolio(user["id"])
 
 
 @app.get("/portfolio/{user_id}")

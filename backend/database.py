@@ -1,7 +1,9 @@
 import os
 import psycopg
+from pathlib import Path
 from dotenv import load_dotenv
 
+load_dotenv(Path(__file__).resolve().parent / ".env")
 load_dotenv()
 
 DB_URL = os.getenv("TIGER_DATABASE_URL")
@@ -18,10 +20,14 @@ def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id VARCHAR(50) PRIMARY KEY,
                 name VARCHAR(100),
+                email VARCHAR(255),
                 is_bot BOOLEAN DEFAULT FALSE,
-                cash DOUBLE PRECISION DEFAULT 100000.0
+                cash DOUBLE PRECISION DEFAULT 100000.0,
+                created_at TIMESTAMPTZ DEFAULT NOW()
             );
             """)
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255);")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
 
             # Create Ticks table
             cur.execute("""
