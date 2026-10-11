@@ -1,0 +1,15 @@
+# Builds the frontend with the backend's public address baked in, then serves it with nginx.
+FROM node:20-bookworm-slim AS build
+WORKDIR /app/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+# The address browsers use to reach the backend, e.g. http://203.0.113.10:8080
+ARG VITE_API_URL
+RUN test -n "$VITE_API_URL" || (echo "VITE_API_URL is required" && exit 1)
+ENV VITE_API_URL=$VITE_API_URL
+RUN npm run build
+
+FROM nginx:1.27-alpine
+COPY --from=build /app/frontend/dist /usr/share/nginx/html
+EXPOSE 80

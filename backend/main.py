@@ -49,17 +49,18 @@ FRESH_TICK_MS = 120_000
 
 def latest_price(symbol, cur=None):
     """(price, ts_ms, source) for a symbol, or None. In order of preference:
-    1. a tick from the ingest feeds under 2 minutes old ("live")
+    1. a tick from the ingest feeds under 2 minutes old ("live", or "replay": the feeds
+       re-write a closed market's last real price as a heartbeat)
     2. a live quote straight from Coinbase / Yahoo (when the feeds aren't running)
     3. an older tick
     4. the last closed hourly candle
     """
     tick = None
     if cur is not None:
-        cur.execute("SELECT price, ts FROM ticks WHERE symbol = %s ORDER BY ts DESC LIMIT 1", (symbol,))
+        cur.execute("SELECT price, ts, source FROM ticks WHERE symbol = %s ORDER BY ts DESC LIMIT 1", (symbol,))
         row = cur.fetchone()
         if row:
-            tick = (float(row[0]), int(row[1].timestamp() * 1000), "live")
+            tick = (float(row[0]), int(row[1].timestamp() * 1000), row[2] or "live")
     elif DB_URL:
         try:
             with get_connection() as conn, conn.cursor() as c:
