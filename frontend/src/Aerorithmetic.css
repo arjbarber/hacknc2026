@@ -72,6 +72,52 @@
 .user-chip { display: flex; align-items: center; gap: 7px; padding: 0; border: 0; background: transparent; color: #60798b; font-size: 10px; cursor: default; }
 .user-chip > span { display: grid; place-items: center; width: 27px; height: 27px; border: 1px solid #bedde7; border-radius: 50%; background: linear-gradient(145deg, #fff, #b9e2ef); color: #317389; font: 700 11px Georgia, serif; }
 .user-chip b { font-weight: 550; }
+.user-chip-auth {
+  cursor: pointer !important;
+  padding: 3px 10px 3px 3px !important;
+  border-radius: 99px !important;
+  background: rgba(255, 255, 255, 0.72) !important;
+  border: 1px solid rgba(116, 178, 200, 0.45) !important;
+  box-shadow: 0 2px 8px rgba(34, 92, 123, 0.08), inset 0 1px 1px #fff !important;
+  transition: all 0.16s ease !important;
+}
+.user-chip-auth:hover {
+  background: #fff !important;
+  border-color: #178f9d !important;
+  box-shadow: 0 4px 14px rgba(23, 143, 157, 0.18), inset 0 1px 1px #fff !important;
+  transform: translateY(-1px);
+}
+.user-tiger-badge {
+  font-size: 8px !important;
+  font-weight: 700 !important;
+  color: #158064 !important;
+  background: #d8f5e7 !important;
+  border: 1px solid rgba(25, 135, 106, 0.25) !important;
+  padding: 2px 6px !important;
+  border-radius: 99px !important;
+  margin-left: 2px !important;
+  letter-spacing: 0.3px;
+}
+.topbar-auth-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #1898aa, #137786);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 3px 10px rgba(23, 143, 157, 0.28), inset 0 1px rgba(255,255,255,0.4);
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+.topbar-auth-btn:hover {
+  background: linear-gradient(135deg, #1aa8bc, #158394);
+  box-shadow: 0 5px 16px rgba(23, 143, 157, 0.4), inset 0 1px rgba(255,255,255,0.5);
+  transform: translateY(-1px);
+}
 .page-body { width: min(1460px, 100%); margin: 0 auto; padding: 30px clamp(18px, 3vw, 46px) 23px; }
 .page-title-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
 .kicker { margin: 0 0 7px; color: #7494a5; font-size: 8px; font-weight: 700; letter-spacing: 1.25px; }

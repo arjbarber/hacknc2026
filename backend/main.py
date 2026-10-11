@@ -35,6 +35,9 @@ app.include_router(auth_router)
 app.include_router(ml_router)
 app.include_router(fih_router)
 
+from backend.nessie_router import router as nessie_router
+app.include_router(nessie_router)
+
 def get_connection():
     return psycopg.connect(DB_URL)
 

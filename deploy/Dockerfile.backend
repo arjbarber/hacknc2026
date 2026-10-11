@@ -1,5 +1,5 @@
-# Backend + ML + ingest feeds only (no frontend build), so it fits small servers.
-# The same image runs the API, the price feeds and the news feed (see docker-compose.yml).
+# The backend: FastAPI API + ML (training, predictions, saved models) + auth.
+# Also contains ingest/ so the same image can run the price/news feeds if wanted.
 FROM python:3.11-slim
 
 # libgomp1: OpenMP runtime that LightGBM (ml/) needs on Linux.
@@ -16,7 +16,16 @@ COPY ml/ ml/
 COPY ingest/ ingest/
 COPY shared/ shared/
 
-# .env is not baked in (.dockerignore); it's mounted at /app/.env at runtime.
-ENV PYTHONUNBUFFERED=1
+# Run as an unprivileged user. .env is not baked in (.dockerignore); it's mounted at /app/.env.
+# uid 1000 = the default "ubuntu" user, so a chmod 600 .env owned by it is still readable.
+RUN useradd --create-home --uid 1000 app
+USER app
+
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 EXPOSE 8000
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=5)"
+# One worker on purpose: unsaved models and price/history caches live in this process's
+# memory, so extra workers would each see different models.
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", \
+     "--proxy-headers", "--forwarded-allow-ips=*"]

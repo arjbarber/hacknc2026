@@ -1,6 +1,7 @@
 import { api } from './lib/api.js'
 import ModelChart from './components/ModelChart.jsx'
 import FihViewer from './components/FihViewer.jsx'
+import { AuthModal, AccountModal } from './components/AuthModal.jsx'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import './Aerorithmetic.css'
 
@@ -67,7 +68,7 @@ const priceDigits = (candles, type) => {
   if (type === 'forex') return 4
   return last < 0.01 ? 8 : last < 1 ? 4 : 2
 }
-const userId = (() => {
+const defaultGuestId = (() => {
   try {
     const stored = localStorage.getItem('aerorithmetic-user-id')
     if (stored) return stored
@@ -97,6 +98,12 @@ function StatusMessage({ loading, error, empty, children }) {
 }
 
 function App() {
+  const [currentUser, setCurrentUser] = useState(null)
+  const [accountStats, setAccountStats] = useState(null)
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const [showAccountModal, setShowAccountModal] = useState(false)
+  const activeUserId = currentUser?.id || defaultGuestId
+
   const [page, setPage] = useState('trade')
   const [aeroCursorEnabled, setAeroCursorEnabled] = useState(() => {
     try {
@@ -247,15 +254,69 @@ function App() {
     }
   }, [aeroCursorEnabled, cursorImageLoaded])
 
+  // Restore existing session or exchange OAuth callback code
+  useEffect(() => {
+    async function restoreSession() {
+      // Check query params for OAuth redirect (?code=...)
+      const searchParams = new URLSearchParams(window.location.search)
+      const authCode = searchParams.get('code')
+      if (authCode) {
+        try {
+          const res = await api.exchangeCode(authCode)
+          if (res.session?.access_token) {
+            localStorage.setItem('aerorithmetic-access-token', res.session.access_token)
+            if (res.session.refresh_token) {
+              localStorage.setItem('aerorithmetic-refresh-token', res.session.refresh_token)
+            }
+          }
+          if (res.user) {
+            setCurrentUser(res.user)
+            localStorage.setItem('aerorithmetic-user-id', res.user.id)
+          }
+          window.history.replaceState({}, document.title, window.location.pathname)
+          return
+        } catch (e) {
+          console.error('OAuth code exchange error:', e)
+        }
+      }
+
+      // Check hash tokens (#access_token=...)
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+      const hashToken = hashParams.get('access_token')
+      if (hashToken) {
+        localStorage.setItem('aerorithmetic-access-token', hashToken)
+        const hashRefresh = hashParams.get('refresh_token')
+        if (hashRefresh) localStorage.setItem('aerorithmetic-refresh-token', hashRefresh)
+        window.history.replaceState({}, document.title, window.location.pathname)
+      }
+
+      // Check stored access token
+      const token = localStorage.getItem('aerorithmetic-access-token')
+      if (token) {
+        try {
+          const me = await api.me()
+          if (me?.user) {
+            setCurrentUser(me.user)
+            if (me.account) setAccountStats(me.account)
+            localStorage.setItem('aerorithmetic-user-id', me.user.id)
+          }
+        } catch {
+          localStorage.removeItem('aerorithmetic-access-token')
+        }
+      }
+    }
+    restoreSession()
+  }, [])
+
   useEffect(() => {
     if (page !== 'trade' && page !== 'portfolio') return
     let active = true
-    Promise.all([api.portfolio(userId), api.orders(userId)]).then(([account, history]) => {
+    Promise.all([api.portfolio(activeUserId), api.orders(activeUserId)]).then(([account, history]) => {
       if (active) { setPortfolio(account); setOrders(history); setPortfolioError(''); setOrdersError('') }
     }).catch((error) => { if (active) { setPortfolioError(error.message); setOrdersError(error.message) } })
       .finally(() => { if (active) setPortfolioLoading(false) })
     return () => { active = false }
-  }, [page])
+  }, [page, activeUserId])
 
   useEffect(() => {
     const equity = Number(portfolio?.equity)
@@ -293,7 +354,7 @@ function App() {
   // Saved models from the account, so they're back after a reload.
   useEffect(() => {
     let active = true
-    api.savedModels(userId).then((list) => {
+    api.savedModels(activeUserId).then((list) => {
       if (!active) return
       setModelsError('')
       setTrainedModels((current) => [
@@ -303,7 +364,7 @@ function App() {
       ])
     }).catch((error) => { if (active) setModelsError(error.message) })
     return () => { active = false }
-  }, [])
+  }, [activeUserId])
 
   // Keep the quote current while trading (the backend caches exchange quotes for 5 seconds).
   useEffect(() => {
@@ -385,10 +446,16 @@ function App() {
     setPortfolioLoading(true)
     setPortfolioError('')
     try {
-      const [account, history] = await Promise.all([api.portfolio(userId), api.orders(userId)])
+      const [account, history] = await Promise.all([api.portfolio(activeUserId), api.orders(activeUserId)])
       setPortfolio(account)
       setOrders(history)
       setOrdersError('')
+      if (currentUser) {
+        api.me().then((me) => {
+          if (me?.account) setAccountStats(me.account)
+          if (me?.user) setCurrentUser(me.user)
+        }).catch(() => {})
+      }
       return account
     } catch (error) { setPortfolioError(error.message) }
     finally { setPortfolioLoading(false) }
@@ -402,6 +469,29 @@ function App() {
     setQuantity(String(Math.floor(buyingPower / quote.price * 1e6) / 1e6))
   }
 
+  // Called when the account's cash goes down (a buy) or up (a sell). amount is always positive.
+  // eslint-disable-next-line no-unused-vars -- remove once this has code
+  function onCashDecrease(amount, cashBefore, cashAfter) {
+  }
+
+  // eslint-disable-next-line no-unused-vars -- remove once this has code
+  function onCashIncrease(amount, cashBefore, cashAfter) {
+  }
+
+  // Watch the cash balance and call the hooks above when it changes. Only balances from the
+  // same account are compared, so switching accounts (e.g. signing in) doesn't count as a change.
+  const prevCash = useRef({ userId: null, cash: null })
+  useEffect(() => {
+    const cash = portfolio?.cash
+    const userId = portfolio?.user_id
+    if (cash == null) return
+    const prev = prevCash.current
+    prevCash.current = { userId, cash }
+    if (prev.userId !== userId || prev.cash == null || cash === prev.cash) return
+    if (cash < prev.cash) onCashDecrease(prev.cash - cash, prev.cash, cash)
+    else onCashIncrease(cash - prev.cash, prev.cash, cash)
+  }, [portfolio?.cash, portfolio?.user_id])
+
   async function placeOrder(event) {
     event.preventDefault()
     const amount = Number(quantity)
@@ -412,7 +502,7 @@ function App() {
     setOrderLoading(true)
     setOrderMessage('')
     try {
-      const result = await api.order({ user_id: userId, symbol: selectedSymbol, side, qty: amount })
+  const result = await api.order({ user_id: activeUserId, symbol: selectedSymbol, side, qty: amount })
       fihRequestRef.current.controller?.abort()
       fihRequestRef.current = { id: fihRequestRef.current.id + 1, controller: null }
       quantityInteractionRef.current = false
@@ -462,7 +552,7 @@ function App() {
     setSaving(true)
     setSaveMessage('')
     try {
-      const saved = await api.saveModel(trainingResult.model_id, { user_id: userId, name: saveName.trim() })
+      const saved = await api.saveModel(trainingResult.model_id, { user_id: activeUserId, name: saveName.trim() })
       setTrainedModels((current) => current.map((model) => model.id === saved.model_id ? { ...model, name: saved.name, saved: true } : model))
       setSaveMessage(`Saved to your account as "${saved.name}".`)
     } catch (error) { setSaveMessage(error.message) }
@@ -472,7 +562,7 @@ function App() {
   async function deleteModel(model) {
     if (!window.confirm(`Delete "${model.name}" from your account?`)) return
     try {
-      await api.deleteModel(model.id, userId)
+      await api.deleteModel(model.id, activeUserId)
       setTrainedModels((current) => current.filter((item) => item.id !== model.id))
       if (selectedModelId === model.id) { setSelectedModelId(''); setForecastEnabled(false); setForecast(null); setForecastOverlay(null) }
     } catch (error) { setModelsError(error.message) }
@@ -557,7 +647,40 @@ function App() {
       <main className="main-shell">
         <header className="topbar">
           <div className="breadcrumb"><span>Workspace</span><b>/</b><strong>{navItems.find((item) => item.id === page)?.label}</strong></div>
-          <div className="topbar-right"><span className="market-pill"><i /> Simulator</span><button className="user-chip" type="button" title={`Backend user ${userId}`}><span>U</span><b>Demo account</b></button></div>
+          <div className="topbar-right">
+            <span className="market-pill"><i /> Simulator</span>
+            {currentUser ? (
+              <button
+                className="user-chip user-chip-auth"
+                type="button"
+                onClick={() => setShowAccountModal(true)}
+                title={`Tiger Data account: ${currentUser.name || currentUser.email} (${currentUser.id})`}
+              >
+                <span>{(currentUser.name || currentUser.email || 'U')[0].toUpperCase()}</span>
+                <b>{currentUser.name || currentUser.email.split('@')[0]}</b>
+                <small className="user-tiger-badge">Tiger Data</small>
+              </button>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  className="user-chip"
+                  type="button"
+                  onClick={() => setShowAuthModal(true)}
+                  title={`Guest demo account ${defaultGuestId}. Click to log in.`}
+                >
+                  <span>G</span>
+                  <b>Demo account</b>
+                </button>
+                <button
+                  className="topbar-auth-btn"
+                  type="button"
+                  onClick={() => setShowAuthModal(true)}
+                >
+                  <span>Sign In</span>
+                </button>
+              </div>
+            )}
+          </div>
         </header>
 
         <div className="page-body">
@@ -613,7 +736,7 @@ function App() {
 
           {page === 'arena' && <>
             <div className="page-title-row"><div><p className="kicker">HUMAN VS. MACHINE</p><h1>The Arena</h1><p className="page-subtitle">Compare trader performance from the leaderboard API.</p></div><span className="soft-badge">{leaderboardLoading ? 'CONNECTING' : leaderboardError ? 'API OFFLINE' : leaderboard.length ? 'BACKEND SAMPLE' : 'NO DATA'}</span></div>
-            <section className="glass-panel arena-panel"><div className="section-heading"><div><p className="kicker">LEADERBOARD</p><h2>Performance rankings</h2></div><span className="muted-label">Ranked by equity return</span></div><StatusMessage loading={leaderboardLoading} error={leaderboardError} empty={!leaderboard.length && !leaderboardLoading ? 'The backend has no leaderboard entries yet.' : null}><div className="leaderboard-table-wrap"><table className="leaderboard-table"><thead><tr><th>Rank</th><th>Trader</th><th>Type</th><th>Equity</th><th>Return</th><th>Comparison</th></tr></thead><tbody>{leaderboard.map((row) => <tr key={`${row.rank}-${row.name}`}><td><span className={`rank-number ${row.rank === 1 ? 'rank-first' : ''}`}>{String(row.rank).padStart(2, '0')}</span></td><td><span className="leader-name"><span className={`leader-avatar ${row.is_bot ? 'bot-avatar' : ''}`}>{row.is_bot ? 'AI' : row.name.slice(0, 1).toUpperCase()}</span><b>{row.name}{row.user_id === userId ? ' · you' : ''}</b></span></td><td><span className={`identity-pill ${row.is_bot ? 'identity-ai' : ''}`}>{row.is_bot ? 'AI model' : 'Human'}</span></td><td>{money(row.equity)}</td><td className={row.pnl_pct >= 0 ? 'positive' : 'negative'}>{row.pnl_pct >= 0 ? '+' : ''}{percent(row.pnl_pct)}</td><td><div className="return-track"><i style={{ width: `${Math.max(2, Math.min(100, Math.abs(row.pnl_pct) * 10))}%` }} className={row.pnl_pct < 0 ? 'track-negative' : ''} /></div></td></tr>)}</tbody></table></div><div className="arena-footnote">Live account values: cash plus open positions at the latest price, against $100,000 starting capital.</div></StatusMessage></section>
+            <section className="glass-panel arena-panel"><div className="section-heading"><div><p className="kicker">LEADERBOARD</p><h2>Performance rankings</h2></div><span className="muted-label">Ranked by equity return</span></div><StatusMessage loading={leaderboardLoading} error={leaderboardError} empty={!leaderboard.length && !leaderboardLoading ? 'The backend has no leaderboard entries yet.' : null}><div className="leaderboard-table-wrap"><table className="leaderboard-table"><thead><tr><th>Rank</th><th>Trader</th><th>Type</th><th>Equity</th><th>Return</th><th>Comparison</th></tr></thead><tbody>{leaderboard.map((row) => <tr key={`${row.rank}-${row.name}`}><td><span className={`rank-number ${row.rank === 1 ? 'rank-first' : ''}`}>{String(row.rank).padStart(2, '0')}</span></td><td><span className="leader-name"><span className={`leader-avatar ${row.is_bot ? 'bot-avatar' : ''}`}>{row.is_bot ? 'AI' : row.name.slice(0, 1).toUpperCase()}</span><b>{row.name}{row.user_id === activeUserId ? ' · you' : ''}</b></span></td><td><span className={`identity-pill ${row.is_bot ? 'identity-ai' : ''}`}>{row.is_bot ? 'AI model' : 'Human'}</span></td><td>{money(row.equity)}</td><td className={row.pnl_pct >= 0 ? 'positive' : 'negative'}>{row.pnl_pct >= 0 ? '+' : ''}{percent(row.pnl_pct)}</td><td><div className="return-track"><i style={{ width: `${Math.max(2, Math.min(100, Math.abs(row.pnl_pct) * 10))}%` }} className={row.pnl_pct < 0 ? 'track-negative' : ''} /></div></td></tr>)}</tbody></table></div><div className="arena-footnote">Live account values: cash plus open positions at the latest price, against $100,000 starting capital.</div></StatusMessage></section>
             <section className="arena-summary-grid">{leaderboard.slice(0, 2).map((row) => <article className="glass-panel arena-stat" key={row.name}><span className="identity-pill">{row.is_bot ? 'AI MODEL' : 'HUMAN TRADER'}</span><h2>{row.name}</h2><strong className={row.pnl_pct >= 0 ? 'positive' : 'negative'}>{row.pnl_pct >= 0 ? '+' : ''}{percent(row.pnl_pct)}</strong><small>{money(row.equity)} equity · Rank #{row.rank}</small></article>)}</section>
           </>}
 
@@ -655,6 +778,33 @@ function App() {
         draggable="false"
         onLoad={() => setCursorImageLoaded(true)}
         onError={() => setCursorImageLoaded(false)}
+      />
+
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onAuthSuccess={(user) => {
+          setCurrentUser(user)
+          refreshPortfolio()
+        }}
+      />
+
+      <AccountModal
+        isOpen={showAccountModal}
+        user={currentUser}
+        accountStats={accountStats}
+        onClose={() => setShowAccountModal(false)}
+        onLogout={() => {
+          localStorage.removeItem('aerorithmetic-access-token')
+          localStorage.removeItem('aerorithmetic-refresh-token')
+          setCurrentUser(null)
+          setAccountStats(null)
+          setShowAccountModal(false)
+          api.logout().catch(() => {})
+        }}
+        onProfileUpdated={(updatedUser) => {
+          setCurrentUser(updatedUser)
+        }}
       />
     </div>
   )
