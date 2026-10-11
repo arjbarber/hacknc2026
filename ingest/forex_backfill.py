@@ -2,6 +2,7 @@ import json, os, pathlib, time
 from datetime import datetime, timezone
 import httpx, psycopg
 from dotenv import load_dotenv
+from zoneinfo import ZoneInfo
 load_dotenv()
 
 KEY = os.environ["TWELVEDATA_API_KEY"]
@@ -17,11 +18,18 @@ def fetch(psym):
         raise RuntimeError(r.get("message", r))
     return r["values"]
 
+def forex_closed(ts_utc):
+    t = ts_utc.astimezone(ZoneInfo("America/New_York"))
+    wd, mins = t.weekday(), t.hour * 60 + t.minute
+    return wd == 5 or (wd == 4 and mins >= 17 * 60) or (wd == 6 and mins < 17 * 60)
+
 rows = []
 for psym, sym in MAP.items():
     values = fetch(psym)
     for v in values:
         ts = datetime.strptime(v["datetime"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        if forex_closed(ts):
+            continue
         rows.append((ts, sym, float(v["close"]), "history"))
     print(sym, len(values), "bars:", values[-1]["datetime"], "->", values[0]["datetime"], "UTC")
     time.sleep(2)
